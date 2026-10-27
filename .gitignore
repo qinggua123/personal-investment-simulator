@@ -1,0 +1,13 @@
+runtime/*.sqlite3
+runtime/*.sqlite3-shm
+runtime/*.sqlite3-wal
+runtime/history/
+__pycache__/
+.pytest_cache/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*
+secrets*

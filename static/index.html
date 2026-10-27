@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#102b36">
+  <title>个人投资模拟工作台</title>
+  <style>
+    :root{--ink:#102b36;--muted:#63757b;--line:#d9e2df;--paper:#f4f7f4;--card:#fff;--teal:#087f72;--green:#197a55;--red:#b4473e;--amber:#966415;--blue:#2f6794;--shadow:0 12px 32px #19343b0b}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);font:15px/1.5 "Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink)}button,input,select{font:inherit}button{cursor:pointer;border:0;border-radius:9px;padding:10px 15px;background:var(--teal);color:white;font-weight:650}button:hover{filter:brightness(.95)}button:disabled{opacity:.45;cursor:not-allowed}.secondary{background:#eaf1ef;color:var(--ink);border:1px solid var(--line)}.danger{background:#fff1ef;color:#9d3e35;border:1px solid #f1cfca}.wrap{max-width:1260px;margin:0 auto;padding:26px 24px 54px}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:22px}.eyebrow{color:var(--teal);font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.top h1{font-size:30px;letter-spacing:-.03em;margin:4px 0}.sub{color:var(--muted);margin:0}.actions{display:flex;gap:10px;align-items:center}.notice{border:1px solid #c8ded8;background:#eaf4f1;color:#244b47;padding:12px 15px;border-radius:12px;margin-bottom:18px}.notice strong{color:#0c6357}.grid{display:grid;gap:14px}.metrics{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:16px}.card{background:var(--card);border:1px solid #e3e9e6;border-radius:14px;padding:17px;box-shadow:var(--shadow)}.metric-label{color:var(--muted);font-size:12px}.metric{font-weight:750;font-size:25px;margin:5px 0 1px;letter-spacing:-.03em}.metric-sub{font-size:12px;color:var(--muted)}.section{margin-top:16px}.section-head{display:flex;align-items:end;justify-content:space-between;gap:14px;margin:0 0 10px}.section h2{font-size:18px;margin:0}.section-head p{color:var(--muted);font-size:13px;margin:3px 0 0}.cols{grid-template-columns:1fr 1fr}.triple{grid-template-columns:1.1fr 1fr 1fr}.rows{display:grid;gap:10px}.targets{grid-template-columns:repeat(5,1fr)}.target{padding:13px;border:1px solid var(--line);border-radius:11px;background:#fff}.target span{display:block;color:var(--muted);font-size:12px}.target b{display:block;font-size:18px;margin:4px 0}.target small{color:var(--muted)}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.field{display:flex;flex-direction:column;gap:5px}.field label,.smalllabel{font-size:12px;color:var(--muted);font-weight:650}.field input,.field select,.input{min-width:0;border:1px solid #cbd7d3;background:#fff;border-radius:8px;padding:9px 10px;color:var(--ink)}.field input:focus,.field select:focus{outline:2px solid #88c9bb;border-color:var(--teal)}.buttonrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}.hint{font-size:12px;color:var(--muted);margin:8px 0 0}.status{display:inline-flex;padding:3px 8px;border-radius:99px;background:#edf0ef;color:#5b6a6d;font-size:11px;font-weight:700}.status.good{background:#e5f3ea;color:#176742}.status.warn{background:#fff3db;color:#865707}.status.bad{background:#fce9e6;color:#9d3e35}.status.info{background:#e8f1f8;color:#315f81}.tablewrap{overflow:auto;border:1px solid var(--line);border-radius:10px}table{border-collapse:collapse;width:100%;font-size:13px;min-width:620px;background:#fff}th,td{text-align:left;padding:10px 11px;border-bottom:1px solid #e9eeec;white-space:nowrap}th{color:var(--muted);font-weight:650;background:#f8faf9;font-size:11px}tr:last-child td{border-bottom:0}.reason{border-left:3px solid #e4b458;padding:8px 10px;background:#fff8e8;border-radius:4px;color:#735316;margin-top:8px;font-size:13px}.reason.good{border-color:#50aa79;background:#eef8f1;color:#235b3a}.reason.bad{border-color:#cb675c;background:#fff0ed;color:#823f38}.ticket-result{min-height:52px;margin-top:10px}.order-actions{display:flex;gap:6px}.mini{padding:6px 9px;font-size:11px}.research{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.research-item{padding:11px;border-radius:10px;background:#f8faf9;border:1px solid var(--line)}.research-item b{font-size:13px}.research-item small{display:block;color:var(--muted);margin-top:3px}.foot{font-size:11px;color:var(--muted);margin:18px 2px}.route{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#476168;font-size:12px}.route span{padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fafcfb}.modalbg{position:fixed;inset:0;background:#102b3680;display:none;align-items:center;justify-content:center;padding:20px;z-index:5}.modal{background:#fff;width:min(520px,100%);border-radius:14px;padding:20px}.modal h3{margin:0 0 8px}.toast{position:fixed;right:24px;bottom:24px;padding:12px 16px;background:#173c43;color:#fff;border-radius:10px;box-shadow:var(--shadow);display:none;z-index:10;max-width:min(500px,calc(100vw - 48px))}
+    @media(max-width:900px){.metrics{grid-template-columns:repeat(3,1fr)}.targets{grid-template-columns:repeat(3,1fr)}.research{grid-template-columns:repeat(3,1fr)}.triple{grid-template-columns:1fr 1fr}}
+    @media(max-width:620px){.wrap{padding:18px 13px 36px}.top{display:block}.actions{margin-top:14px}.top h1{font-size:25px}.metrics{grid-template-columns:repeat(2,1fr);gap:9px}.metric{font-size:21px}.cols,.triple{grid-template-columns:1fr}.targets{grid-template-columns:repeat(2,1fr)}.research{grid-template-columns:repeat(2,1fr)}.card{padding:14px}.formgrid{grid-template-columns:1fr 1fr}.section-head{display:block}.section-head .buttonrow{margin-top:8px}}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <div><div class="eyebrow">LOCAL PAPER-TRADING DESK</div><h1>个人投资模拟工作台</h1><p class="sub">按你的投资方案逐单演练：检查条件、模拟成交、复核资产比例。</p></div>
+    <div class="actions"><a href="/">历史回测</a><a href="/settings">设置</a><span class="status info">仅本机 · 模拟账户</span><button id="refreshBtn" class="secondary">刷新行情</button></div>
+  </header>
+  <div class="notice"><strong>模拟环境：</strong>订单不会发送到券商。行情快照不是盘口承诺；513800 必须另外录入同一时点 IOPV。首次账户余额为 ¥0，需手动模拟入金。</div>
+
+  <section class="grid metrics" id="metrics"></section>
+
+  <section class="section card">
+    <div class="section-head"><div><h2>长期配置与每月预算</h2><p>现金与个股准备金是现金用途标签，不重复计入资产。</p></div><span class="status info">每月模拟投入 ¥3,000</span></div>
+    <div class="grid targets" id="targets"></div>
+    <div class="route" style="margin-top:12px"><b>未用海外预算：</b><span>同指数替代</span><i>→</i><span>短债至 50%</span><i>→</i><span>其他合格海外指数</span><i>→</i><span>留作现金</span><small> · 个股准备金 ¥150 单独累计</small></div>
+  </section>
+
+  <section class="section card">
+    <div class="section-head"><div><h2>本期预算路由预览</h2><p>按当前账户市值、平台核验状态、限额、IOPV、成本和仓位计算；只做建议，不自动下单。</p></div><div class="buttonrow" style="margin:0"><input id="routeAmount" class="input" type="number" min="1" step="100" value="3000" aria-label="本期新增预算"><button id="routeBtn" class="secondary">重算路由</button></div></div>
+    <div id="routeResult" class="grid targets"></div>
+    <div id="routeReasons" class="hint" style="margin-top:10px"></div>
+  </section>
+
+  <section class="section grid cols">
+    <article class="card">
+      <div class="section-head"><div><h2>模拟入金</h2><p>入金会调整账户份额，不会抹去既有回撤。</p></div></div>
+      <div class="formgrid"><div class="field"><label for="depositAmount">入金金额（元）</label><input id="depositAmount" type="number" min="1" step="100" value="3000"></div><div class="field"><label for="depositNote">备注</label><input id="depositNote" value="模拟月度投入"></div></div>
+      <div class="buttonrow"><button id="depositBtn">记入模拟账户</button><span class="hint">默认零余额；每次投入都单独记账。</span></div>
+    </article>
+    <article class="card" style="display:none">
+      <div class="section-head"><div><h2>本人平台费率</h2><p>以下为可编辑模拟值；下单前请按券商/基金平台核对。</p></div><span id="platformBadge" class="status warn">待核验</span></div>
+      <div class="formgrid">
+        <div class="field"><label>佣金率（默认 0.03%）</label><input id="commissionRate" type="number" step="0.0001" min="0"></div>
+        <div class="field"><label>最低佣金（元，默认 ¥5）</label><input id="minCommission" type="number" step="0.01" min="0"></div>
+        <div class="field"><label>017641 日申购额度（元）</label><input id="quota017641" type="number" step="1" min="0"></div>
+        <div class="field"><label>017641 折后申购费率</label><input id="fee017641" type="number" step="0.0001" min="0"></div>
+        <div class="field"><label>012692 折后申购费率</label><input id="fee012692" type="number" step="0.0001" min="0"></div>
+        <div class="field"><label>股票卖出印花税率（核实后填）</label><input id="stampDuty" type="number" step="0.0001" min="0" placeholder="待核验"></div>
+      </div>
+      <div class="buttonrow"><label class="hint"><input id="verify017641" type="checkbox"> 已核对 017641 平台限额/费率</label><label class="hint"><input id="verify012692" type="checkbox"> 已核对 012692 开放/费率</label></div>
+      <div class="buttonrow"><label class="hint"><input id="verifyStamp" type="checkbox"> 已核对股票卖出税费</label><button id="saveSettings" class="secondary">保存设置</button></div>
+    </article>
+  </section>
+
+  <section class="section grid triple">
+    <article class="card">
+      <div class="section-head"><div><h2>模拟交易预检</h2><p>先预检，全部通过后才可以提交模拟订单。</p></div></div>
+      <div class="formgrid">
+        <div class="field"><label>标的</label><select id="ticketCode"></select></div>
+        <div class="field"><label>方向</label><select id="ticketSide"><option value="buy">买入</option><option value="sell">卖出</option></select></div>
+        <div class="field" id="amountField"><label>申购金额（元）</label><input id="ticketAmount" type="number" min="1" step="1" placeholder="例如 10"></div>
+        <div class="field" id="quantityField" style="display:none"><label>数量（ETF 100 份整手）</label><input id="ticketQty" type="number" min="100" step="100" placeholder="100"></div>
+        <div class="field" id="limitField" style="display:none"><label>限价（元）</label><input id="ticketLimit" type="number" min="0.001" step="0.001" placeholder="手动输入"></div>
+      </div>
+      <div class="buttonrow"><button id="previewBtn">执行预检</button><button id="submitBtn" disabled>提交模拟订单</button></div>
+      <div id="previewResult" class="ticket-result" aria-live="polite"></div>
+    </article>
+    <article class="card">
+      <div class="section-head"><div><h2>513800 同时点数据</h2><p>场内价格和 IOPV 都要在当前 60 秒内。</p></div><span id="iopvBadge" class="status bad">缺 IOPV</span></div>
+      <div class="formgrid">
+        <div class="field"><label>券商场内价（元）</label><input id="manualPrice" type="number" step="0.001" placeholder="例如 1.844"></div>
+        <div class="field"><label>场内价观测时间</label><input id="priceTime" type="datetime-local"></div>
+        <div class="field"><label>券商 IOPV（元）</label><input id="manualIopv" type="number" step="0.0001" placeholder="例如 1.8493"></div>
+        <div class="field"><label>IOPV 观测时间</label><input id="iopvTime" type="datetime-local"></div>
+      </div>
+      <div class="buttonrow"><button id="saveManualQuote" class="secondary">保存同一时点数据</button></div>
+      <div id="premiumResult" class="hint">没有 IOPV 时不生成溢价结论，也不允许提交买入。</div>
+    </article>
+    <article class="card">
+      <div class="section-head"><div><h2>回撤与交易闸门</h2><p>按单位净值计算；入金不会重置。</p></div></div>
+      <div id="riskPanel"></div>
+      <div class="hint" style="margin-top:12px">10%：额外复核　·　15%：暂停新增个股　·　20%：暂停新增权益。仅暂停买入，不自动清仓。</div>
+    </article>
+  </section>
+
+  <section class="section card">
+    <div class="section-head"><div><h2>行情与来源</h2><p>过期数据仅作历史参考；盘中下单须重新刷新或录入当前券商报价。</p></div><span id="refreshState" class="hint"></span></div>
+    <div class="tablewrap"><table><thead><tr><th>标的</th><th>参考价 / 净值</th><th>数据时间</th><th>状态</th><th>来源 / 请求号</th><th>IOPV</th></tr></thead><tbody id="quotesBody"></tbody></table></div>
+  </section>
+
+  <section class="section grid cols">
+    <article class="card"><div class="section-head"><div><h2>模拟持仓</h2><p>待确认申购不计入份额，冻结资金仍属于账户净资产。</p></div></div><div class="tablewrap"><table><thead><tr><th>标的</th><th>份额</th><th>成本</th><th>参考价</th><th>市值</th><th>价格状态</th></tr></thead><tbody id="positionsBody"></tbody></table></div></article>
+    <article class="card"><div class="section-head"><div><h2>重点跟踪公司</h2><p>观察名单不是买入许可；行情不能替代研究和估值。</p></div></div><div class="research" id="researchCards"></div></article>
+  </section>
+
+  <section class="section card"><div class="section-head"><div><h2>模拟订单</h2><p>场内订单需手动推进成交；基金申购需录入确认净值及依据。</p></div></div><div class="tablewrap"><table><thead><tr><th>提交时间</th><th>标的</th><th>方向</th><th>状态</th><th>金额/数量</th><th>费用</th><th>溢价</th><th>操作</th></tr></thead><tbody id="ordersBody"></tbody></table></div></section>
+
+  <section class="section card"><div class="section-head"><div><h2>账户流水</h2><p>外部入金、成交费用和基金确认分开记录。</p></div></div><div class="tablewrap"><table><thead><tr><th>时间</th><th>类型</th><th>金额</th><th>说明</th></tr></thead><tbody id="flowsBody"></tbody></table></div></section>
+  <p class="foot">本机模拟账本 · 数据来自 Hithink 快照、用户录入及模拟订单。快照不等于可成交盘口；基金确认净值须按实际交易渠道核验。此工具只执行你设定的规则，不提供收益保证。</p>
+</main>
+<div class="modalbg" id="confirmModal"><div class="modal"><h3>确认场外基金模拟份额</h3><p class="hint">请使用申购确认页/交易记录中的确认净值，不能用旧净值代替。</p><input id="confirmOrderId" type="hidden"><div class="formgrid"><div class="field"><label>确认净值</label><input id="confirmNav" type="number" step="0.0001"></div><div class="field"><label>净值日期</label><input id="confirmNavDate" type="date"></div><div class="field" style="grid-column:1/-1"><label>确认依据（平台记录/模拟凭据）</label><input id="confirmEvidence" placeholder="例如：平台确认记录编号"></div></div><div class="buttonrow"><button id="confirmBtn">确认模拟份额</button><button id="closeModal" class="secondary">取消</button></div></div></div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+const $=id=>document.getElementById(id);let appState=null,lastPreview=null;
+const fmt=(v,dec=2)=>new Intl.NumberFormat('zh-CN',{minimumFractionDigits:dec,maximumFractionDigits:dec}).format(Number(v||0));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pct=v=>(Number(v||0)*100).toFixed(1)+'%';
+function localDateTime(){const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)}
+function setNowFields(){const t=localDateTime();$('priceTime').value=t;$('iopvTime').value=t}
+function toast(message){const el=$('toast');el.textContent=message;el.style.display='block';setTimeout(()=>el.style.display='none',3600)}
+async function api(url,options={}){const res=await fetch(url,{headers:{'Content-Type':'application/json'},...options});let body={};try{body=await res.json()}catch{}if(!res.ok){const msg=body.detail?.reasons?.join('；')||body.detail?.message||body.detail||'请求失败';throw new Error(typeof msg==='string'?msg:JSON.stringify(msg))}return body}
+const post=(url,data)=>api(url,{method:'POST',body:JSON.stringify(data)});
+function selectedInstrument(){return appState?.instruments?.[$('ticketCode').value]}
+function drawState(s){appState=s;drawMetrics();drawTargets();drawSettings();drawQuotes();drawPositions();drawOrders();drawFlows();drawResearch();drawRisk();updateTicketFields();}
+function drawMetrics(){const a=appState.account;const dd=Number(a.drawdown||0);$('metrics').innerHTML=[['模拟净资产','¥'+fmt(a.nav),'持仓市值 + 现金 + 冻结资金'],['可用现金','¥'+fmt(a.cash),'待处理订单冻结 ¥'+fmt(a.reserved_cash)],['单位净值',fmt(a.unit_nav,4),'外部入金按单位化处理'],['当前回撤',pct(dd),dd<=-.2?'已触发权益暂停':dd<=-.15?'已暂停新增个股':dd<=-.1?'需要额外复核':'未触发暂停阈值'],['本月模拟预算','¥3,000','准备金与留存现金按现金用途标记']].map(x=>`<article class="card"><div class="metric-label">${x[0]}</div><div class="metric">${x[1]}</div><div class="metric-sub">${x[2]}</div></article>`).join('')}
+function drawTargets(){const names={sp500:'标普 500',topix:'TOPIX',stock:'个股',bond:'0–3 年短债',cash:'现金'};const amts={sp500:540,topix:360,stock:150,bond:1350,cash:600};$('targets').innerHTML=Object.entries(names).map(([k,n])=>`<div class="target"><span>${n}</span><b>${Math.round(appState.targets[k]*100)}%</b><small>月预算 ¥${amts[k]}</small></div>`).join('')}
+function drawSettings(){const s=appState.settings;$('commissionRate').value=s.commission_rate;$('minCommission').value=s.minimum_commission;$('quota017641').value=s.quota_017641;$('fee017641').value=s.fee_017641;$('fee012692').value=s.fee_012692;$('stampDuty').value=s.stamp_duty_rate||'';$('verify017641').checked=!!s.platform_017641_verified;$('verify012692').checked=!!s.platform_012692_verified;$('verifyStamp').checked=!!s.stamp_duty_verified;$('platformBadge').textContent=(s.platform_017641_verified&&s.platform_012692_verified)?'平台已核验':'待核验';$('platformBadge').className='status '+((s.platform_017641_verified&&s.platform_012692_verified)?'good':'warn');}
+function quoteStatus(q){return q.fresh?'<span class="status good">当前 60 秒内</span>':'<span class="status warn">过期/日期待核</span>'}
+function drawQuotes(){const q=appState.quotes;$('quotesBody').innerHTML=q.map(x=>`<tr><td>${esc(x.name)} <small>${esc(x.code)}</small></td><td>${x.price?fmt(x.price,Number(x.price)<10?3:2):'—'}${x.kind==='fund'&&!x.nav_date_known?'（净值日期未知）':''}</td><td>${x.observed_at?esc(new Date(x.observed_at).toLocaleString('zh-CN')):'未知'}</td><td>${quoteStatus(x)}</td><td>${esc(x.source)}<br><small>${esc(x.request_id||'')}</small></td><td>${x.iopv?fmt(x.iopv,4)+' · '+esc(x.iopv_at):'缺少'}</td></tr>`).join('');const topix=q.find(x=>x.code==='513800');if(topix?.iopv&&topix.price){const prem=(Number(topix.price)/Number(topix.iopv)-1)*100;$('iopvBadge').textContent=`${prem>=0?'溢价':'折价'} ${Math.abs(prem).toFixed(3)}%`;$('iopvBadge').className='status '+(prem<=2?'good':'bad');$('premiumResult').textContent=`场内价 ${topix.price}，IOPV ${topix.iopv}；溢价率 ${prem.toFixed(3)}%。${prem<=2?'价格条件通过，仍须检查佣金和仓位。':'超过 2% 上限。'}`;$('premiumResult').className='hint'}else{$('iopvBadge').textContent='缺 IOPV';$('iopvBadge').className='status bad';$('premiumResult').textContent='没有 IOPV 时不生成溢价结论，也不允许提交买入。';$('premiumResult').className='hint'}}
+function drawPositions(){const rows=appState.positions;$('positionsBody').innerHTML=rows.length?rows.map(p=>`<tr><td>${esc(p.name)} ${esc(p.code)}</td><td>${fmt(p.quantity,4)}</td><td>${fmt(p.avg_cost,4)}</td><td>${fmt(p.price,4)}</td><td>¥${fmt(p.market_value)}</td><td>${p.price_fresh?'<span class="status good">新</span>':'<span class="status warn">旧价/成本估值</span>'}</td></tr>`).join(''):'<tr><td colspan="6">暂无模拟持仓。提交并确认订单后会在此显示。</td></tr>'}
+function drawResearch(){const list=[['工商银行','601398','银行：PB-ROE、净息差、资产质量与拨备'],['长江电力','600900','公用事业：来水、现金流、资本开支'],['美的集团','000333','家电：正常化利润、自由现金流、海外业务'],['海尔智家','600690','家电：分地区增长、利润率与现金流'],['福耀玻璃','600660','汽车玻璃：扩产回报、汇率与现金流']];$('researchCards').innerHTML=list.map(x=>`<div class="research-item"><b>${x[0]} · ${x[1]}</b><small>${x[2]}</small><small><span class="status warn">观察中 · 未批准买入</span></small></div>`).join('')}
+function drawRisk(){const dd=Number(appState.account.drawdown||0);const state=dd<=-.2?['暂停全部新增权益','bad']:dd<=-.15?['暂停新增个股','bad']:dd<=-.1?['额外风险复核','warn']:['正常','good'];$('riskPanel').innerHTML=`<div style="font-size:25px;font-weight:750;margin:8px 0"><span class="status ${state[1]}">${state[0]}</span></div><div class="hint">权益合计 ${pct(appState.account.ratios.sp500+appState.account.ratios.topix+appState.account.ratios.stock)} · 上限 45%<br>短债 ${pct(appState.account.ratios.bond)} · 临时上限 50%</div>`}
+function drawOrders(){const labels={pending_fill:'待模拟成交',pending_confirmation:'待净值确认',filled:'模拟已完成',cancelled:'已撤销'};$('ordersBody').innerHTML=appState.orders.length?appState.orders.map(o=>{let action='—';if(o.status==='pending_fill')action=`<div class="order-actions"><button class="mini" onclick="fillOrder('${esc(o.id)}')">模拟成交</button><button class="mini danger" onclick="cancelOrder('${esc(o.id)}')">撤单</button></div>`;if(o.status==='pending_confirmation')action=`<div class="order-actions"><button class="mini" onclick="openConfirm('${esc(o.id)}')">录确认净值</button><button class="mini danger" onclick="cancelOrder('${esc(o.id)}')">撤单</button></div>`;return `<tr><td>${esc(new Date(o.created_at).toLocaleString('zh-CN'))}</td><td>${esc(appState.instruments[o.code]?.name||o.code)}<br><small>${esc(o.code)}</small></td><td>${o.side==='buy'?'买入':'卖出'}</td><td><span class="status ${o.status==='filled'?'good':o.status==='cancelled'?'':'warn'}">${labels[o.status]||o.status}</span></td><td>${o.quantity!=='0'?'数量 '+fmt(o.quantity,4):'金额 ¥'+fmt(o.amount)}</td><td>¥${fmt(o.fee)}</td><td>${o.premium_pct?o.premium_pct+'%':'—'}</td><td>${action}</td></tr>`}).join(''):'<tr><td colspan="8">暂无订单。</td></tr>'}
+function drawFlows(){$('flowsBody').innerHTML=appState.flows.length?appState.flows.map(f=>`<tr><td>${esc(new Date(f.created_at).toLocaleString('zh-CN'))}</td><td>${esc(f.kind)}</td><td>${f.amount==='0'?'—':'¥'+fmt(f.amount)}</td><td>${esc(f.note)}</td></tr>`).join(''):'<tr><td colspan="4">暂无流水。</td></tr>'}
+function updateTicketFields(){const info=selectedInstrument();if(!info)return;const fund=info.kind==='fund';$('amountField').style.display=fund?'flex':'none';$('quantityField').style.display=fund?'none':'flex';$('limitField').style.display=fund?'none':'flex';lastPreview=null;$('submitBtn').disabled=true}
+async function refreshRoute(){try{const r=await post('/api/route-preview',{amount:Number($('routeAmount').value||3000)});const names={sp500:'标普 500',topix:'TOPIX',bond:'短债',stock_reserve:'个股准备金',cash:'现金留存'};$('routeResult').innerHTML=Object.entries(names).map(([k,n])=>`<div class="target"><span>${n}</span><b>¥${fmt(r.allocations?.[k]||r[k]||0)}</b><small>${k==='stock_reserve'?'独立累计':k==='cash'?'含未使用预算':r.reasons?.[k]||'按规则计算'}</small></div>`).join('');$('routeReasons').innerHTML=`${Object.entries(r.reasons||{}).map(([k,v])=>`<span class="status ${String(v).includes('待核验')||String(v).includes('缺少')||String(v).includes('超过')?'warn':'info'}">${esc(k)}：${esc(v)}</span>`).join(' ')}<br><span class="hint">总计 ¥${fmt(r.total)}；其中未用海外预算 ¥${fmt(r.overseas_unspent_after_route)} 仍留现金。${esc(r.note)}</span>`}catch(e){$('routeReasons').textContent=e.message}}
+async function load(){try{drawState(await api('/api/state'));await refreshRoute()}catch(e){toast(e.message)}}
+$('ticketCode').addEventListener('change',updateTicketFields);$('ticketSide').addEventListener('change',()=>{lastPreview=null;$('submitBtn').disabled=true});
+$('routeBtn').onclick=refreshRoute;$('routeAmount').addEventListener('change',refreshRoute);
+$('depositBtn').onclick=async()=>{try{await post('/api/deposit',{amount:Number($('depositAmount').value),note:$('depositNote').value||'模拟月度投入'});await load();toast('模拟入金已记入')}catch(e){toast(e.message)}};
+$('saveSettings').onclick=async()=>{try{await post('/api/settings',{commission_rate:Number($('commissionRate').value),minimum_commission:Number($('minCommission').value),quota_017641:Number($('quota017641').value),fee_017641:Number($('fee017641').value),fee_012692:Number($('fee012692').value),stamp_duty_rate:$('stampDuty').value===''?null:Number($('stampDuty').value),platform_017641_verified:$('verify017641').checked,platform_012692_verified:$('verify012692').checked,stamp_duty_verified:$('verifyStamp').checked});await load();toast('平台模拟参数已保存')}catch(e){toast(e.message)}};
+$('saveManualQuote').onclick=async()=>{try{const code='513800';const at=new Date($('priceTime').value).toISOString();await post('/api/quotes/manual',{code,price:Number($('manualPrice').value),observed_at:at,source_note:'用户录入：本人券商页面'});await post('/api/iopv',{code,iopv:Number($('manualIopv').value),observed_at:new Date($('iopvTime').value).toISOString(),source_note:'用户录入：本人券商 IOPV'});setNowFields();await load();toast('同一时点场内价和 IOPV 已保存')}catch(e){toast(e.message)}};
+$('previewBtn').onclick=async()=>{try{const info=selectedInstrument();const body={code:$('ticketCode').value,side:$('ticketSide').value};if(info.kind==='fund')body.amount=Number($('ticketAmount').value);else{body.quantity=Number($('ticketQty').value);body.limit_price=Number($('ticketLimit').value)}lastPreview=await post('/api/orders/preview',body);const p=lastPreview;$('previewResult').innerHTML=`<div class="reason ${p.ok?'good':'bad'}"><b>${p.ok?'预检通过':'暂不能提交'}</b><br>${p.ok?`金额 ¥${fmt(p.amount)} · 估算费用 ¥${fmt(p.fee)} · 冻结 ¥${fmt(p.reserved)}${p.premium_pct?` · 溢价 ${p.premium_pct}%`:''}<br><small>状态：${p.status_after_submit==='pending_confirmation'?'等待基金净值确认':'等待模拟成交'}；成交后仍按账户整体检查。</small>`:p.reasons.map(esc).join('<br>')}</div>`;$('submitBtn').disabled=!p.ok;window.ticketBody=body}catch(e){$('previewResult').innerHTML=`<div class="reason bad">${esc(e.message)}</div>`;$('submitBtn').disabled=true}};
+$('submitBtn').onclick=async()=>{if(!lastPreview?.ok)return;try{const body={...window.ticketBody,idempotency_key:crypto.randomUUID()};await post('/api/orders',body);await load();$('previewResult').innerHTML='<div class="reason good">模拟订单已提交。请在订单区手动成交，或等待并录入基金确认净值。</div>';$('submitBtn').disabled=true;toast('模拟订单已提交')}catch(e){toast(e.message)}};
+$('refreshBtn').onclick=async()=>{const b=$('refreshBtn');b.disabled=true;$('refreshState').textContent='正在请求 Hithink remote snapshot…';try{const r=await post('/api/quotes/refresh',{});await load();$('refreshState').textContent=r.results.map(x=>`${x.group}：${x.ok?'成功 '+x.observed_at:'失败，保留旧快照'}`).join(' · ');toast(r.ok?'行情快照已更新；513800 IOPV 仍需单独录入':'部分数据源刷新失败，旧行情已标记过期')}catch(e){$('refreshState').textContent=e.message;toast(e.message)}finally{b.disabled=false}};
+window.fillOrder=async id=>{try{await post(`/api/orders/${id}/fill`,{});await load();toast('模拟成交已记账')}catch(e){toast(e.message)}};window.cancelOrder=async id=>{try{await post(`/api/orders/${id}/cancel`,{});await load();toast('订单已撤销，冻结资金已释放')}catch(e){toast(e.message)}};window.openConfirm=id=>{$('confirmOrderId').value=id;$('confirmNavDate').value=new Date().toISOString().slice(0,10);$('confirmModal').style.display='flex'};
+$('closeModal').onclick=()=>$('confirmModal').style.display='none';$('confirmBtn').onclick=async()=>{try{await post(`/api/orders/${$('confirmOrderId').value}/confirm`,{nav:Number($('confirmNav').value),nav_date:$('confirmNavDate').value,evidence:$('confirmEvidence').value});$('confirmModal').style.display='none';await load();toast('模拟基金份额已确认')}catch(e){toast(e.message)}};
+async function boot(){setNowFields();await load();const options=Object.entries(appState.instruments).map(([code,x])=>`<option value="${esc(code)}">${esc(x.name)} · ${code}</option>`);$('ticketCode').innerHTML=options.join('');$('ticketCode').value='513800';updateTicketFields()}
+boot();
+</script>
+</body>
+</html>
