@@ -8,6 +8,7 @@ from decimal import Decimal, ROUND_DOWN
 import hashlib
 import json
 import math
+import re
 import sqlite3
 import subprocess
 import threading
@@ -32,9 +33,104 @@ def _app_objects():
     return INSTRUMENTS, cli_base_command
 
 HISTORY_DIR = HERE / "runtime" / "history"
+CUSTOM_STOCKS_PATH = HERE / "runtime" / "backtest_stocks.json"
 RUN_DB = HERE / "runtime" / "backtests.sqlite3"
 DATA_LOCK = threading.Lock()
+REGISTRY_LOCK = threading.RLock()
 CN_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _custom_stock_registry() -> dict[str, dict[str, Any]]:
+    with REGISTRY_LOCK:
+        if not CUSTOM_STOCKS_PATH.exists():
+            return {}
+        try:
+            data = json.loads(CUSTOM_STOCKS_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"回测自选股票配置无法读取：{exc}") from exc
+    builtins = _app_objects()[0]
+    if not isinstance(data, dict):
+        raise RuntimeError("回测自选股票配置格式无效")
+    valid = {}
+    for code, info in data.items():
+        if code in builtins or not isinstance(info, dict) or info.get("kind") != "stock":
+            continue
+        if re.fullmatch(r"\d{6}", str(code)) and info.get("thscode"):
+            valid[str(code)] = info
+    return valid
+
+
+def backtest_instrument_map() -> dict[str, dict[str, Any]]:
+    builtins = _app_objects()[0]
+    return {**builtins, **_custom_stock_registry()}
+
+
+def backtest_instrument_items() -> list[dict[str, Any]]:
+    return [
+        {"code": code, "name": info["name"], "kind": info["kind"], "bucket": info.get("bucket", "stock"),
+         "custom": bool(info.get("custom_backtest", False)), "exchange": info.get("exchange")}
+        for code, info in backtest_instrument_map().items()
+    ]
+
+
+def backtest_instrument_info(code: str) -> dict[str, Any]:
+    try:
+        return backtest_instrument_map()[code]
+    except KeyError as exc:
+        raise ValueError(f"未支持的回测标的：{code}") from exc
+
+
+def add_backtest_stock(raw_code: str) -> dict[str, Any]:
+    match = re.fullmatch(r"(\d{6})(?:\.(SH|SZ|BJ))?", str(raw_code).strip().upper())
+    if not match:
+        raise ValueError("请输入 6 位 A 股代码，可选添加 .SH、.SZ 或 .BJ 后缀")
+    ticker, requested_exchange = match.groups()
+    builtins, _ = _app_objects()
+    if ticker in builtins:
+        info = builtins[ticker]
+        if info.get("kind") != "stock":
+            raise ValueError("该代码已存在，但不是 A 股股票")
+        expected_exchange = info.get("exchange") or ("SH" if ticker.startswith("6") else "SZ" if ticker[0] in "023" else "BJ" if ticker[0] in "48" else None)
+        if requested_exchange and expected_exchange and expected_exchange != requested_exchange:
+            raise LookupError(f"内置标的 {ticker} 属于 {expected_exchange} 市场")
+        return {"code": ticker, "name": info["name"], "kind": "stock", "bucket": "stock", "custom": False, "exchange": expected_exchange}
+    existing = _custom_stock_registry().get(ticker)
+    if existing:
+        if requested_exchange and existing.get("exchange") != requested_exchange:
+            raise LookupError(f"自选标的 {ticker} 已登记在 {existing.get('exchange')} 市场")
+        return {"code": ticker, "name": existing["name"], "kind": "stock", "bucket": "stock", "custom": True, "exchange": existing["exchange"]}
+
+    payload = _cli("symbol", "search", "--q", ticker, "--asset-type", "a-share", "--limit", "50")
+    candidates = payload.get("data", {}).get("item", [])
+    matches = [
+        item for item in candidates
+        if item.get("ticker") == ticker and item.get("asset_type") == "a-share"
+        and (not requested_exchange or item.get("exchange") == requested_exchange)
+    ]
+    if not matches:
+        suffix = f".{requested_exchange}" if requested_exchange else ""
+        raise LookupError(f"Hithink 标的目录未找到 A 股 {ticker}{suffix}")
+    distinct = {item.get("thscode") for item in matches}
+    if len(distinct) != 1:
+        exchanges = ", ".join(sorted({item.get("exchange", "未知") for item in matches}))
+        raise ValueError(f"代码 {ticker} 对应多个市场（{exchanges}），请补充交易所后缀")
+    item = matches[0]
+    thscode = str(item.get("thscode", ""))
+    if thscode != f"{ticker}.{item.get('exchange')}":
+        raise ValueError("数据源返回的股票代码与查询代码不一致")
+    info = {
+        "name": str(item.get("name") or ticker), "kind": "stock", "bucket": "stock", "asset": "equity",
+        "lot": 100, "industry": "A 股（行业信息未补充）", "research_approved": False,
+        "custom_backtest": True, "exchange": item["exchange"], "thscode": thscode,
+    }
+    with REGISTRY_LOCK:
+        registry = _custom_stock_registry()
+        registry[ticker] = info
+        CUSTOM_STOCKS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = CUSTOM_STOCKS_PATH.with_suffix(".tmp")
+        temporary.write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(CUSTOM_STOCKS_PATH)
+    return {"code": ticker, "name": info["name"], "kind": "stock", "bucket": "stock", "custom": True, "exchange": item["exchange"]}
 
 
 def today_cn() -> date:
@@ -78,7 +174,8 @@ class BacktestRequest(BaseModel):
         entries = self.custom_entries if self.strategy == "custom" else self.allocations
         if not entries or len(entries) > 250:
             raise ValueError("请选择 1 至 250 条投资配置")
-        if any(x.code not in _app_objects()[0] for x in entries):
+        supported_codes = set(backtest_instrument_map())
+        if any(x.code not in supported_codes for x in entries):
             raise ValueError("包含未支持的标的")
         if self.strategy == "custom" and any(not self.start_date <= x.date <= self.stop_date for x in entries):
             raise ValueError("自定义买入日期必须在投入期间")
@@ -135,7 +232,10 @@ def _cli(*args: str) -> dict[str, Any]:
 
 
 def _suffix(code: str) -> str:
-    return code + (".OF" if _app_objects()[0][code]["kind"] == "fund" else ".SH" if code.startswith("6") or code == "513800" else ".SZ")
+    info = backtest_instrument_info(code)
+    if info.get("thscode"):
+        return str(info["thscode"])
+    return code + (".OF" if info["kind"] == "fund" else ".SH" if code.startswith("6") or code == "513800" else ".SZ")
 
 
 def _cache_path(code: str, key: str) -> Path:
@@ -144,7 +244,7 @@ def _cache_path(code: str, key: str) -> Path:
 
 def _cached(code: str, key: str, fetch, *, force: bool = False) -> dict[str, Any]:
     path = _cache_path(code, key)
-    live_key = key in {"nav_fyear", "nav_since_inception", "actions", "dividends", "splits_since_inception"} or key == f"raw_{today_cn().year}"
+    live_key = key in {"nav_fyear", "nav_since_inception", "dividends", "splits_since_inception"} or key.startswith("actions_from_year_") or key == f"raw_{today_cn().year}"
     same_cn_day = path.exists() and datetime.fromtimestamp(path.stat().st_mtime, CN_TZ).date() == today_cn()
     if path.exists() and not force and (not live_key or same_cn_day):
         return json.loads(path.read_text(encoding="utf-8"))
@@ -267,7 +367,7 @@ def _cross_check_fund_nav(code: str, ak_items: list[dict[str, Any]]) -> tuple[di
 
 
 def load_history(code: str, start: date, end: date, *, refresh: bool = False) -> dict[str, Any]:
-    kind = _app_objects()[0][code]["kind"]
+    kind = backtest_instrument_info(code)["kind"]
     symbol = _suffix(code)
     needs_full_history = kind == "fund" and code == "050025" and start <= today_cn() - timedelta(days=365 * 5)
     request_ids: list[str] = []
@@ -304,7 +404,9 @@ def load_history(code: str, start: date, end: date, *, refresh: bool = False) ->
                     if x.get("open_price") and x.get("close_price"):
                         rows.append({"date": _day(int(x["date_ms"])), "open": float(x["open_price"]), "close": float(x["close_price"])})
         if kind == "stock":
-            raw_events = _cached(code, "actions", lambda: _cli("market", "corporate-actions", "--thscode", symbol, "--from-date", "2015-01-01", "--to-date", today_cn().isoformat()), force=refresh)
+            event_start = date(start.year, 1, 1).isoformat()
+            event_key = f"actions_from_year_{start.year}"
+            raw_events = _cached(code, event_key, lambda: _cli("market", "corporate-actions", "--thscode", symbol, "--from-date", event_start, "--to-date", today_cn().isoformat()), force=refresh)
             request_ids.append(str(raw_events.get("meta", {}).get("request_id", "")))
             events = [{"date": _day(int(x["ex_date_ms"])), "cash": float(x.get("dividend_per_share") or 0), "bonus": float(x.get("per_share_bonus") or 0), "payment": None} for x in raw_events["data"].get("item", []) if x.get("ex_date_ms")]
         else:
@@ -623,7 +725,7 @@ def calculate(req: BacktestRequest, histories: dict[str, dict[str, Any]]) -> dic
     final_value = curve[-1]["value"]
     flows.append((actual_end, final_value))
     xirr = _xirr(flows)
-    positions = [{"code": c, "name": _app_objects()[0][c]["name"], "units": round(units[c], 6), "last_price": marks.get(c), "market_value": round(units[c] * marks.get(c, 0), 2), "pending_budget": round(max(0, unspent[c]), 2)} for c in codes]
+    positions = [{"code": c, "name": backtest_instrument_info(c)["name"], "units": round(units[c], 6), "last_price": marks.get(c), "market_value": round(units[c] * marks.get(c, 0), 2), "pending_budget": round(max(0, unspent[c]), 2)} for c in codes]
     return {"summary": {"invested": round(invested, 2), "value": round(final_value, 2), "profit": round(final_value - invested, 2), "simple_return": final_value / invested - 1 if invested else None,
                         "xirr": xirr, "twr_return": twr_nav - 1, "max_drawdown": max_dd, "cash": round(cash, 2), "fees": round(fees, 2), "dividends": round(dividends, 2), "actual_start": curve[0]["date"], "actual_end": actual_end,
                         "frequency": req.strategy, "schedule_day": req.schedule_day if req.strategy in _PERIOD_MONTHS else None,

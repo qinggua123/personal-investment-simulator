@@ -199,6 +199,10 @@ class DepositIn(BaseModel):
     note: str = "模拟月度投入"
 
 
+class BacktestStockIn(BaseModel):
+    code: str = Field(min_length=6, max_length=9)
+
+
 class RouteIn(BaseModel):
     amount: Decimal = Field(default=Decimal("3000"), gt=0, le=100000000)
 
@@ -554,10 +558,20 @@ def create_app(db_path: Path = DB_PATH, seed: bool = True) -> FastAPI:
 
     @app.get("/api/backtest/instruments")
     def backtest_instruments() -> dict[str, Any]:
-        items = []
-        for code, info in INSTRUMENTS.items():
-            items.append({"code": code, "name": info["name"], "kind": info["kind"], "bucket": info["bucket"]})
+        items = bt.backtest_instrument_items()
         return {"items": items, "source": "hithink-finance 远端历史接口；实际覆盖区间以回测结果为准"}
+
+    @app.post("/api/backtest/instruments")
+    def add_backtest_instrument(payload: BacktestStockIn) -> dict[str, Any]:
+        try:
+            item = bt.add_backtest_stock(payload.code)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(502, f"股票代码核验失败：{exc}") from exc
+        return {"item": item, "source": "Hithink A 股标的目录"}
 
     @app.post("/api/backtests")
     def start_backtest(request: BacktestRequest, background: BackgroundTasks) -> dict[str, str]:

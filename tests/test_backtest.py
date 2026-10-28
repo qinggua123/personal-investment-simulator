@@ -3,6 +3,7 @@ from datetime import date
 from fastapi.testclient import TestClient
 
 from personal_investment_simulator.app import create_app
+from personal_investment_simulator import backtest as bt
 from personal_investment_simulator.backtest import BacktestRequest, _day, calculate
 
 
@@ -42,6 +43,81 @@ def test_backtest_pages_and_account_are_independent(tmp_path):
     assert len(client.get("/api/backtest/instruments").json()["items"]) == 9
     assert client.get("/api/state").json()["account"]["nav"] == 0
     assert client.get("/api/backtests").json()["items"] == []
+
+
+def test_custom_stock_lookup_registers_backtest_only_and_persists(tmp_path, monkeypatch):
+    monkeypatch.setattr(bt, "CUSTOM_STOCKS_PATH", tmp_path / "backtest_stocks.json")
+    calls = []
+
+    def fake_cli(*args):
+        calls.append(args)
+        return {"data": {"item": [{"ticker": "601318", "name": "中国平安", "exchange": "SH", "thscode": "601318.SH", "asset_type": "a-share"}]}}
+
+    monkeypatch.setattr(bt, "_cli", fake_cli)
+    client = TestClient(create_app(tmp_path / "paper.sqlite3", seed=False))
+    response = client.post("/api/backtest/instruments", json={"code": "601318"})
+    assert response.status_code == 200
+    assert response.json()["item"] == {"code": "601318", "name": "中国平安", "kind": "stock", "bucket": "stock", "custom": True, "exchange": "SH"}
+    assert calls == [("symbol", "search", "--q", "601318", "--asset-type", "a-share", "--limit", "50")]
+
+    listed = client.get("/api/backtest/instruments").json()["items"]
+    assert any(x["code"] == "601318" and x["custom"] for x in listed)
+    assert "601318" not in client.get("/api/state").json()["instruments"]
+    assert bt._suffix("601318") == "601318.SH"
+    request = BacktestRequest(strategy="once", start_date=date(2025, 1, 2), stop_date=date(2025, 1, 2), evaluation_date=date(2025, 1, 3), allocations=[{"code": "601318", "amount": 3000}])
+    assert request.allocations[0].code == "601318"
+
+    reopened = TestClient(create_app(tmp_path / "paper.sqlite3", seed=False))
+    assert any(x["code"] == "601318" for x in reopened.get("/api/backtest/instruments").json()["items"])
+
+
+def test_custom_stock_lookup_rejects_nonmatching_and_ambiguous_symbols(tmp_path, monkeypatch):
+    monkeypatch.setattr(bt, "CUSTOM_STOCKS_PATH", tmp_path / "backtest_stocks.json")
+    client = TestClient(create_app(tmp_path / "paper.sqlite3", seed=False))
+    invalid = client.post("/api/backtest/instruments", json={"code": "not-a-code"})
+    assert invalid.status_code == 422
+
+    monkeypatch.setattr(bt, "_cli", lambda *args: {"data": {"item": []}})
+    missing = client.post("/api/backtest/instruments", json={"code": "999999"})
+    assert missing.status_code == 404
+
+    monkeypatch.setattr(bt, "_cli", lambda *args: {"data": {"item": [
+        {"ticker": "123456", "name": "示例沪股", "exchange": "SH", "thscode": "123456.SH", "asset_type": "a-share"},
+        {"ticker": "123456", "name": "示例深股", "exchange": "SZ", "thscode": "123456.SZ", "asset_type": "a-share"},
+    ]}})
+    ambiguous = client.post("/api/backtest/instruments", json={"code": "123456"})
+    assert ambiguous.status_code == 400
+    disambiguated = client.post("/api/backtest/instruments", json={"code": "123456.SZ"})
+    assert disambiguated.status_code == 200
+    assert disambiguated.json()["item"]["exchange"] == "SZ"
+
+
+def test_custom_stock_history_fetches_requested_year_and_matching_actions(tmp_path, monkeypatch):
+    monkeypatch.setattr(bt, "CUSTOM_STOCKS_PATH", tmp_path / "backtest_stocks.json")
+    monkeypatch.setattr(bt, "HISTORY_DIR", tmp_path / "history")
+    calls = []
+
+    def fake_cli(*args):
+        calls.append(args)
+        if args[0:2] == ("symbol", "search"):
+            return {"data": {"item": [{"ticker": "601318", "name": "中国平安", "exchange": "SH", "thscode": "601318.SH", "asset_type": "a-share"}]}}
+        if args[0:2] == ("market", "history"):
+            return {"data": {"item": [
+                {"date_ms": bt._ms(date(2014, 1, 2)), "open_price": 10, "close_price": 10.2},
+                {"date_ms": bt._ms(date(2014, 1, 3)), "open_price": 10.2, "close_price": 10.3},
+            ]}}
+        if args[0:2] == ("market", "corporate-actions"):
+            return {"data": {"item": []}}
+        raise AssertionError(args)
+
+    monkeypatch.setattr(bt, "_cli", fake_cli)
+    bt.add_backtest_stock("601318.SH")
+    history = bt.load_history("601318", date(2014, 1, 2), date(2014, 12, 31), refresh=True)
+    action_call = next(x for x in calls if x[0:2] == ("market", "corporate-actions"))
+    assert "--from-date" in action_call
+    assert action_call[action_call.index("--from-date") + 1] == "2014-01-01"
+    assert history["rows"][0]["date"] == "2014-01-02"
+    assert history["source"] == "hithink-finance remote"
 
 
 def test_market_timestamp_uses_china_calendar_day():
