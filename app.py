@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import shutil
@@ -14,14 +16,14 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 try:
-    from .backtest import BacktestRequest
+    from .backtest import BacktestRequest, LongDcaRequest
 except ImportError:
-    from backtest import BacktestRequest
+    from backtest import BacktestRequest, LongDcaRequest
 
 
 HERE = Path(__file__).resolve().parent
@@ -563,6 +565,12 @@ def create_app(db_path: Path = DB_PATH, seed: bool = True) -> FastAPI:
         background.add_task(bt.execute_run, run_id, request, run_db)
         return {"id": run_id, "status": "running"}
 
+    @app.post("/api/backtests/2016-dca")
+    def start_2016_dca(request: LongDcaRequest, background: BackgroundTasks) -> dict[str, str]:
+        run_id = bt.create_run(request, run_db)
+        background.add_task(bt.execute_long_dca_run, run_id, request, run_db)
+        return {"id": run_id, "status": "running"}
+
     @app.get("/api/backtests")
     def backtest_runs() -> dict[str, Any]:
         with closing(sqlite3.connect(run_db)) as conn:
@@ -578,6 +586,17 @@ def create_app(db_path: Path = DB_PATH, seed: bool = True) -> FastAPI:
     def export_backtest(run_id: str) -> JSONResponse:
         record = bt.get_run(run_id, run_db)
         return JSONResponse(record, headers={"Content-Disposition": f'attachment; filename="backtest-{run_id}.json"'})
+
+    @app.get("/api/backtests/{run_id}/ledger.csv")
+    def export_backtest_ledger(run_id: str) -> Response:
+        record = bt.get_run(run_id, run_db)
+        result = record.get("result") or {}
+        output = io.StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(["date", "planned_date", "code", "type", "price", "units", "amount", "fee", "note"])
+        for row in result.get("ledger", []):
+            writer.writerow([row.get(key, "") for key in ("date", "planned_date", "code", "type", "price", "units", "amount", "fee", "note")])
+        return Response("\ufeff" + output.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="backtest-{run_id}-ledger.csv"'})
 
     @app.get("/api/state")
     def state() -> dict[str, Any]:
