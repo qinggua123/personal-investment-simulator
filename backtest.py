@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import bisect
+import calendar
 from contextlib import closing
 from decimal import Decimal, ROUND_DOWN
 import hashlib
@@ -54,6 +55,8 @@ class BacktestRequest(BaseModel):
     start_date: date
     stop_date: date
     evaluation_date: date
+    schedule_day: str = Field(default="1", pattern=r"^(?:[1-9]|1[0-9]|2[0-8]|last)$")
+    schedule_weekday: int | None = Field(default=None, ge=0, le=4)
     allocations: list[Allocation] = Field(default_factory=list)
     custom_entries: list[CustomEntry] = Field(default_factory=list)
     commission_rate: float = Field(default=0.0003, ge=0, le=0.02)
@@ -66,8 +69,8 @@ class BacktestRequest(BaseModel):
 
     @model_validator(mode="after")
     def check(self):
-        if self.strategy not in {"once", "weekly", "monthly", "custom"}:
-            raise ValueError("策略必须为一次性、每周、每月或自定义")
+        if self.strategy not in {"once", "daily", "weekly", "biweekly", "monthly", "quarterly", "semiannual", "annual", "custom"}:
+            raise ValueError("策略必须为每日、每周、每两周、每月、每季度、每半年、每年、一次性或自定义")
         if not (self.start_date <= self.stop_date <= self.evaluation_date <= today_cn()):
             raise ValueError("日期必须满足开始 ≤ 停投 ≤ 评估 ≤ 今天")
         if self.evaluation_date - self.start_date > timedelta(days=365 * 12):
@@ -85,17 +88,22 @@ class BacktestRequest(BaseModel):
 
 
 class LongDcaRequest(BaseModel):
-    """Single-fund, long-history monthly DCA example; independent of paper account."""
+    """Single-fund, long-history DCA example; independent of paper account."""
     start_date: date = date(2016, 1, 1)
     stop_date: date
     evaluation_date: date
     monthly_amount: Decimal = Field(gt=0, le=1_000_000)
+    frequency: str = "monthly"
+    schedule_day: str = Field(default="1", pattern=r"^(?:[1-9]|1[0-9]|2[0-8]|last)$")
+    schedule_weekday: int = Field(default=0, ge=0, le=4)
     fee_rate: Decimal = Field(default=Decimal("0.0012"), ge=0, le=Decimal("0.1"))
     reinvest_dividends: bool = True
     refresh_data: bool = False
 
     @model_validator(mode="after")
     def check(self):
+        if self.frequency not in {"once", "daily", "weekly", "biweekly", "monthly", "quarterly", "semiannual", "annual"}:
+            raise ValueError("单基金定投频率不受支持")
         if not (self.start_date <= self.stop_date <= self.evaluation_date <= today_cn()):
             raise ValueError("日期必须满足开始 ≤ 停止投入 ≤ 评估 ≤ 今天")
         if self.evaluation_date - self.start_date > timedelta(days=365 * 20):
@@ -335,22 +343,93 @@ def load_history(code: str, start: date, end: date, *, refresh: bool = False) ->
             "first": rows[0]["date"], "last": rows[-1]["date"], "price_basis": "单位净值" if kind == "fund" else "不复权开盘/收盘"}
 
 
+_PERIOD_MONTHS = {"monthly": 1, "quarterly": 3, "semiannual": 6, "annual": 12}
+
+
+def _planned_dates(
+    start: date,
+    stop: date,
+    frequency: str,
+    schedule_day: str = "1",
+    schedule_weekday: int | None = None,
+    available_dates: list[str] | None = None,
+) -> list[date]:
+    """Generate calendar schedule dates; daily mode uses the instrument's own data dates."""
+    if frequency == "once":
+        return [start]
+    if frequency == "daily":
+        if available_dates is None:
+            return []
+        return [date.fromisoformat(day) for day in available_dates if start.isoformat() <= day <= stop.isoformat()]
+    if frequency in {"weekly", "biweekly"}:
+        chosen_weekday = start.weekday() if schedule_weekday is None else schedule_weekday
+        offset = (chosen_weekday - start.weekday()) % 7
+        day = start + timedelta(days=offset)
+        step = 14 if frequency == "biweekly" else 7
+        result = []
+        while day <= stop:
+            result.append(day)
+            day += timedelta(days=step)
+        return result
+    if frequency not in _PERIOD_MONTHS:
+        raise ValueError(f"不支持的定投频率：{frequency}")
+
+    interval = _PERIOD_MONTHS[frequency]
+    month_index = start.year * 12 + start.month - 1
+    stop_index = stop.year * 12 + stop.month - 1
+    result = []
+    while month_index <= stop_index:
+        year, month0 = divmod(month_index, 12)
+        month = month0 + 1
+        last_day = calendar.monthrange(year, month)[1]
+        day_number = last_day if schedule_day == "last" else min(int(schedule_day), last_day)
+        candidate = date(year, month, day_number)
+        # The start date is an inclusive first installment if the selected day has passed.
+        if candidate < start:
+            candidate = start
+        if candidate <= stop:
+            result.append(candidate)
+        month_index += interval
+    return result
+
+
+def _period_start(start: date, planned: date, frequency: str) -> date:
+    interval = _PERIOD_MONTHS[frequency]
+    elapsed_months = (planned.year - start.year) * 12 + planned.month - start.month
+    period_offset = (elapsed_months // interval) * interval
+    month_index = start.year * 12 + start.month - 1 + period_offset
+    year, month0 = divmod(month_index, 12)
+    return date(year, month0 + 1, 1)
+
+
+def _resolve_schedule_date(planned: date, dates: list[str], *, period_start: date | None = None) -> str:
+    planned_text = planned.isoformat()
+    if period_start is not None:
+        index = bisect.bisect_right(dates, planned_text) - 1
+        if index < 0:
+            raise ValueError(f"计划日 {planned_text} 所在周期没有可用交易/净值日")
+        actual = dates[index]
+        if actual < period_start.isoformat():
+            raise ValueError(f"计划日 {planned_text} 所在周期没有可用交易/净值日")
+        if (planned - date.fromisoformat(actual)).days > 16:
+            raise ValueError(f"计划日 {planned_text} 前缺少可用交易/净值日")
+        return actual
+
+    index = bisect.bisect_left(dates, planned_text)
+    if index >= len(dates):
+        raise ValueError(f"{planned_text} 后无可用交易/净值日")
+    actual = dates[index]
+    if (date.fromisoformat(actual) - planned).days > 16:
+        raise ValueError(f"计划日 {planned_text} 后缺少可用交易/净值日")
+    return actual
+
+
 def _schedule(req: BacktestRequest) -> list[tuple[str, str, float]]:
     if req.strategy == "custom":
         return [(x.date.isoformat(), x.code, x.amount) for x in req.custom_entries]
-    days = []
-    if req.strategy == "once":
-        days = [req.start_date]
-    elif req.strategy == "weekly":
-        d = req.start_date
-        while d <= req.stop_date:
-            days.append(d)
-            d += timedelta(days=7)
-    else:
-        d = req.start_date
-        while d <= req.stop_date:
-            days.append(d)
-            d = date(d.year + (d.month == 12), d.month % 12 + 1, 1)
+    if req.strategy == "daily":
+        return []  # Daily schedules are generated per instrument from its actual history.
+    days = _planned_dates(req.start_date, req.stop_date, req.strategy, req.schedule_day, req.schedule_weekday)
     return [(d.isoformat(), x.code, x.amount) for d in days for x in req.allocations]
 
 
@@ -393,15 +472,24 @@ def calculate(req: BacktestRequest, histories: dict[str, dict[str, Any]]) -> dic
     for c in codes:
         for split in histories[c].get("splits", []):
             splits[c].setdefault(split["date"], []).append(split)
+    planned_entries = _schedule(req)
+    if req.strategy == "daily":
+        planned_entries = [
+            (day, allocation.code, allocation.amount)
+            for allocation in req.allocations
+            for day in date_lists[allocation.code]
+            if req.start_date.isoformat() <= day <= req.stop_date.isoformat()
+        ]
     schedule = []
-    for planned, code, amount in _schedule(req):
+    for planned, code, amount in planned_entries:
         dates = date_lists[code]
-        idx = bisect.bisect_left(dates, planned)
-        if idx >= len(dates) or dates[idx] > effective_end:
-            raise ValueError(f"{code} 在 {planned} 后无可用交易/净值日")
-        if (date.fromisoformat(dates[idx]) - date.fromisoformat(planned)).days > 16:
-            raise ValueError(f"{code} 的 {planned} 投入日存在过长数据缺口")
-        schedule.append((dates[idx], planned, code, amount))
+        planned_day = date.fromisoformat(planned)
+        last_of_period = req.schedule_day == "last" and req.strategy in _PERIOD_MONTHS
+        period_start = _period_start(req.start_date, planned_day, req.strategy) if last_of_period else None
+        actual = _resolve_schedule_date(planned_day, dates, period_start=period_start)
+        if actual > effective_end:
+            raise ValueError(f"{code} 在 {planned} 后无评估日前可用交易/净值日")
+        schedule.append((actual, planned, code, amount))
     scheduled = {}
     for actual, planned, code, amount in schedule:
         scheduled.setdefault(actual, []).append((planned, code, amount, True))
@@ -418,6 +506,7 @@ def calculate(req: BacktestRequest, histories: dict[str, dict[str, Any]]) -> dic
     unspent = {c: 0.0 for c in codes}
     marks: dict[str, float] = {}
     cash = invested = fees = dividends = 0.0
+    executed_contributions = 0
     ledger = []
     curve = []
     flows = []
@@ -481,6 +570,8 @@ def calculate(req: BacktestRequest, histories: dict[str, dict[str, Any]]) -> dic
         todays = scheduled.get(day, [])
         for planned, c, amount, external in todays:
             unspent[c] += amount
+            if external:
+                executed_contributions += 1
         for c in dict.fromkeys(x[1] for x in todays):
             planned = next(x[0] for x in todays if x[1] == c)
             row = maps[c].get(day)
@@ -515,7 +606,7 @@ def calculate(req: BacktestRequest, histories: dict[str, dict[str, Any]]) -> dic
             cash -= cost
             unspent[c] -= cost
             fees += fee
-            ledger.append({"date": day, "planned_date": planned, "code": c, "type": "买入", "price": round(price, 6), "units": round(bought, 6), "amount": round(cost, 2), "fee": round(fee, 2)})
+            ledger.append({"date": day, "planned_date": planned, "code": c, "type": "买入", "price": round(price, 6), "units": round(bought, 6), "amount": round(cost, 2), "fee": round(fee, 2), "note": "按定投计划买入" if external else "分红再投资"})
         for c in codes:
             for e in histories[c]["events"]:
                 if e.get("registration") == day:
@@ -534,13 +625,16 @@ def calculate(req: BacktestRequest, histories: dict[str, dict[str, Any]]) -> dic
     xirr = _xirr(flows)
     positions = [{"code": c, "name": _app_objects()[0][c]["name"], "units": round(units[c], 6), "last_price": marks.get(c), "market_value": round(units[c] * marks.get(c, 0), 2), "pending_budget": round(max(0, unspent[c]), 2)} for c in codes]
     return {"summary": {"invested": round(invested, 2), "value": round(final_value, 2), "profit": round(final_value - invested, 2), "simple_return": final_value / invested - 1 if invested else None,
-                        "xirr": xirr, "twr_return": twr_nav - 1, "max_drawdown": max_dd, "cash": round(cash, 2), "fees": round(fees, 2), "dividends": round(dividends, 2), "actual_start": curve[0]["date"], "actual_end": actual_end},
+                        "xirr": xirr, "twr_return": twr_nav - 1, "max_drawdown": max_dd, "cash": round(cash, 2), "fees": round(fees, 2), "dividends": round(dividends, 2), "actual_start": curve[0]["date"], "actual_end": actual_end,
+                        "frequency": req.strategy, "schedule_day": req.schedule_day if req.strategy in _PERIOD_MONTHS else None,
+                        "schedule_weekday": (req.schedule_weekday if req.schedule_weekday is not None else req.start_date.weekday()) if req.strategy in {"weekly", "biweekly"} else None,
+                        "planned_entries": len(planned_entries), "executed_entries": executed_contributions},
             "coverage": [{k: h[k] for k in ("code", "source", "first", "last", "price_basis")} | {"rows": len(h["rows"]), "events": len(h["events"]), "request_ids": h.get("request_ids", [])} for h in histories.values()],
             "positions": positions, "curve": curve, "ledger": ledger, "warnings": warnings}
 
 
 def calculate_long_dca(req: LongDcaRequest, history: dict[str, Any]) -> dict[str, Any]:
-    """Monthly 050025 NAV simulation with disclosed fund dividend dates and cent-rounded units."""
+    """050025 NAV simulation with configurable schedule and disclosed fund dividend dates."""
     if history.get("code") != "050025" or history.get("kind") != "fund":
         raise ValueError("长期定投示例当前仅支持场外基金 050025")
     valid_rows = [r for r in history["rows"] if req.start_date.isoformat() <= r["date"] <= req.evaluation_date.isoformat()]
@@ -556,22 +650,23 @@ def calculate_long_dca(req: LongDcaRequest, history: dict[str, Any]) -> dict[str
     nav_by_day = {r["date"]: Decimal(str(r["close"])) for r in valid_rows}
     nav_days = sorted(nav_by_day)
 
-    planned_days: list[str] = []
-    planned = req.start_date
-    while planned <= req.stop_date:
-        planned_days.append(planned.isoformat())
-        planned = date(planned.year + (planned.month == 12), planned.month % 12 + 1, 1)
+    planned_dates = _planned_dates(
+        req.start_date,
+        req.stop_date,
+        req.frequency,
+        req.schedule_day,
+        req.schedule_weekday,
+        nav_days if req.frequency == "daily" else None,
+    )
     schedule: dict[str, list[str]] = {}
-    for planned_day in planned_days:
-        idx = bisect.bisect_left(nav_days, planned_day)
-        if idx >= len(nav_days):
-            continue
-        actual_day = nav_days[idx]
-        if (date.fromisoformat(actual_day) - date.fromisoformat(planned_day)).days > 16:
-            raise ValueError(f"计划日 {planned_day} 后缺少可用净值日")
+    for planned_date in planned_dates:
+        planned_day = planned_date.isoformat()
+        last_of_period = req.schedule_day == "last" and req.frequency in _PERIOD_MONTHS
+        period_start = _period_start(req.start_date, planned_date, req.frequency) if last_of_period else None
+        actual_day = _resolve_schedule_date(planned_date, nav_days, period_start=period_start)
         schedule.setdefault(actual_day, []).append(planned_day)
     if not schedule:
-        raise ValueError("评估区间内没有已执行的月度投入")
+        raise ValueError("评估区间内没有已执行的定投投入")
 
     events = []
     for source in history.get("events", []):
@@ -695,24 +790,28 @@ def calculate_long_dca(req: LongDcaRequest, history: dict[str, Any]) -> dict[str
         "actual_end": actual_end,
         "first_investment_date": flows[0][0],
         "requested_evaluation_date": req.evaluation_date.isoformat(),
-        "planned_installments": len([d for d in planned_days if d <= req.evaluation_date.isoformat()]),
+        "planned_installments": len([d for d in planned_dates if d <= req.evaluation_date]),
         "executed_installments": executed,
+        "frequency": req.frequency,
+        "schedule_day": req.schedule_day if req.frequency in _PERIOD_MONTHS else None,
+        "schedule_weekday": req.schedule_weekday if req.frequency in {"weekly", "biweekly"} else None,
         "units": round(float(units), 2),
         "latest_nav": float(nav_by_day[actual_end]),
         "pending_dividends": round(float(sum((item["amount"] for item in pending), Decimal("0"))), 2),
     }
     warnings = [
-        "假设每月定投日均可申购；未还原历史限购、暂停申购及平台额度。",
+        "假设计划日期均可申购；未还原历史限购、暂停申购及平台额度。",
         f"申购费率按当前模拟值 {float(req.fee_rate) * 100:.4g}% 统一应用整个历史区间；非历史逐年费率。",
         "评估日按最新完整单位净值日截断；累计收益率按累计投入计算，年化为资金加权 XIRR。",
         "净值包含基金层面的费用；期末总值按持有份额和分红应收计，不扣未发生的赎回费用。",
+        "定投计划日按所选规则生成，遇非净值日按页面说明顺延或回退到本期最后净值日。",
     ]
     cross_check = history.get("cross_check") or {}
     if cross_check.get("warning"):
         warnings.insert(0, cross_check["warning"])
     return {
         "mode": "long_dca",
-        "calculation_version": "long-dca-v1",
+        "calculation_version": "long-dca-v2",
         "data_snapshot_sha256": hashlib.sha256(digest_payload).hexdigest(),
         "summary": summary,
         "coverage": [{"code": "050025", "source": history.get("source", "unknown"), "first": history["first"], "last": history["last"], "rows": len(history["rows"]), "events": len(history.get("events", [])), "splits": len(history.get("splits", [])), "cross_check": cross_check, "request_ids": history.get("request_ids", []), "price_basis": "单位净值"}],

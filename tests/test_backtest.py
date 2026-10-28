@@ -32,7 +32,11 @@ def test_fund_fee_and_dividend_reinvestment_after_payment():
 
 def test_backtest_pages_and_account_are_independent(tmp_path):
     client = TestClient(create_app(tmp_path / "paper.sqlite3", seed=False))
-    assert client.get("/").status_code == 200
+    page = client.get("/")
+    assert page.status_code == 200
+    assert 'id="dcaFrequency"' in page.text
+    assert 'id="scheduleDay"' in page.text
+    assert 'id="scheduleWeekday"' in page.text
     assert client.get("/trade").status_code == 200
     assert client.get("/settings").status_code == 200
     assert len(client.get("/api/backtest/instruments").json()["items"]) == 9
@@ -69,5 +73,55 @@ def test_monthly_stock_budget_accumulates_until_one_lot_is_affordable():
     req = BacktestRequest(strategy="monthly", start_date=date(2025, 1, 2), stop_date=date(2025, 3, 3), evaluation_date=date(2025, 3, 3), allocations=[{"code": "600690", "amount": 1000}])
     result = calculate(req, {"600690": h})
     assert result["summary"]["invested"] == 3000
+    assert result["summary"]["planned_entries"] == 3
+    assert result["summary"]["executed_entries"] == 3
     assert result["positions"][0]["units"] == 100
     assert result["summary"]["cash"] == 495
+
+
+def test_month_end_schedule_uses_last_available_day_in_each_month():
+    rows = [
+        {"date": "2024-01-02", "open": 1, "close": 1},
+        {"date": "2024-01-30", "open": 1, "close": 1},
+        {"date": "2024-02-28", "open": 1, "close": 1},
+        {"date": "2024-03-01", "open": 1, "close": 1},
+    ]
+    h = history("012692", "fund", rows)
+    req = BacktestRequest(
+        strategy="monthly",
+        start_date=date(2024, 1, 2),
+        stop_date=date(2024, 2, 29),
+        evaluation_date=date(2024, 3, 1),
+        schedule_day="last",
+        allocations=[{"code": "012692", "amount": 1000}],
+        bond_fee_rate=0,
+    )
+    result = calculate(req, {"012692": h})
+    purchases = [row for row in result["ledger"] if row["type"] == "买入" and row.get("planned_date")]
+    assert [(row["planned_date"], row["date"]) for row in purchases] == [
+        ("2024-01-31", "2024-01-30"),
+        ("2024-02-29", "2024-02-28"),
+    ]
+    assert result["summary"]["planned_entries"] == 2
+    assert result["summary"]["executed_entries"] == 2
+
+
+def test_daily_multi_asset_backtest_uses_actual_asset_dates_once_each():
+    rows = [
+        {"date": "2025-01-02", "open": 1, "close": 1},
+        {"date": "2025-01-03", "open": 1, "close": 1},
+        {"date": "2025-01-06", "open": 1, "close": 1},
+    ]
+    h = history("012692", "fund", rows)
+    req = BacktestRequest(
+        strategy="daily",
+        start_date=date(2025, 1, 2),
+        stop_date=date(2025, 1, 6),
+        evaluation_date=date(2025, 1, 6),
+        allocations=[{"code": "012692", "amount": 1000}],
+        bond_fee_rate=0,
+    )
+    result = calculate(req, {"012692": h})
+    assert result["summary"]["planned_entries"] == 3
+    assert result["summary"]["executed_entries"] == 3
+    assert result["summary"]["invested"] == 3000
