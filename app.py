@@ -22,8 +22,10 @@ from pydantic import BaseModel, Field
 
 try:
     from .backtest import BacktestRequest, LongDcaRequest
+    from . import stock_research as sr
 except ImportError:
     from backtest import BacktestRequest, LongDcaRequest
+    import stock_research as sr
 
 
 HERE = Path(__file__).resolve().parent
@@ -540,9 +542,14 @@ def create_app(db_path: Path = DB_PATH, seed: bool = True) -> FastAPI:
     init_db(db_path, seed=seed)
     run_db = db_path.parent / "backtests.sqlite3"
     bt.init_runs(run_db)
+    sr.initialize(sr.RUN_DB)
     app = FastAPI(title="个人投资模拟器", version="1.0.0")
     app.state.db_path = db_path
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon() -> Response:
+        return Response(status_code=204)
 
     @app.get("/")
     def index() -> FileResponse:
@@ -555,6 +562,76 @@ def create_app(db_path: Path = DB_PATH, seed: bool = True) -> FastAPI:
     @app.get("/settings")
     def settings_page() -> FileResponse:
         return FileResponse(HERE / "static" / "settings.html")
+
+    @app.get("/research")
+    def stock_research_page() -> FileResponse:
+        return FileResponse(HERE / "static" / "research.html")
+
+    @app.get("/api/research/universe")
+    def research_universe() -> dict[str, Any]:
+        return {"items": sr.UNIVERSE, "count": len(sr.UNIVERSE), "model_version": sr.MODEL_VERSION}
+
+    @app.post("/api/research/runs")
+    def start_stock_research(request: sr.ResearchRunRequest, background: BackgroundTasks) -> dict[str, str]:
+        run_id = sr.create_run(request)
+        background.add_task(sr.execute_run, run_id, request)
+        return {"id": run_id, "status": "queued"}
+
+    @app.get("/api/research/runs")
+    def stock_research_runs() -> dict[str, Any]:
+        return {"items": sr.list_runs()}
+
+    @app.get("/api/research/runs/{run_id}")
+    def stock_research_run(run_id: str) -> dict[str, Any]:
+        try:
+            return sr.get_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(404, "研究记录不存在") from exc
+
+    @app.get("/api/research/runs/{run_id}/companies.csv")
+    def stock_research_csv(run_id: str) -> Response:
+        try:
+            record = sr.get_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(404, "研究记录不存在") from exc
+        if record.get("status") != "done" or not record.get("result"):
+            raise HTTPException(409, "研究任务尚未完成")
+        return Response(sr.companies_csv(record["result"]), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="stock-research-{run_id}.csv"'})
+
+    @app.get("/api/research/runs/{run_id}/factor-history.csv")
+    def stock_research_factor_history_csv(run_id: str) -> Response:
+        try:
+            record = sr.get_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(404, "研究记录不存在") from exc
+        if record.get("status") != "done" or not record.get("result"):
+            raise HTTPException(409, "研究任务尚未完成")
+        return Response(sr.factor_history_csv(record["result"]), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="stock-factor-history-{run_id}.csv"'})
+
+    @app.get("/api/research/runs/{run_id}/export.json")
+    def stock_research_json(run_id: str) -> JSONResponse:
+        try:
+            record = sr.get_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(404, "研究记录不存在") from exc
+        if record.get("status") != "done" or not record.get("result"):
+            raise HTTPException(409, "研究任务尚未完成")
+        return JSONResponse(record["result"], headers={"Content-Disposition": f'attachment; filename="stock-research-{run_id}.json"'})
+
+    @app.get("/api/research/runs/{run_id}/report.html")
+    def stock_research_html(run_id: str) -> FileResponse:
+        try:
+            record = sr.get_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(404, "研究记录不存在") from exc
+        if record.get("status") != "done":
+            raise HTTPException(409, "研究任务尚未完成")
+        path = sr.EXPORT_DIR / f"stock-research-{run_id}.html"
+        if not path.exists() and record.get("result"):
+            path = sr._write_html_export(run_id, record["result"])
+        return FileResponse(path, media_type="text/html; charset=utf-8", filename=path.name)
 
     @app.get("/api/backtest/instruments")
     def backtest_instruments() -> dict[str, Any]:
