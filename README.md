@@ -75,8 +75,8 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8765
 ## 开发验证
 
 ```powershell
-cd D:\my_work\quant_sp
-python -m pytest -q personal_investment_simulator/tests
+cd D:\my_work\quant_sp\personal_investment_simulator
+python -m pytest -q
 ```
 
 开发计划和验收场景见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。

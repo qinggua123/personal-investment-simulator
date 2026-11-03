@@ -793,16 +793,23 @@ def calculate_long_dca(req: LongDcaRequest, history: dict[str, Any]) -> dict[str
     event_days = ({d for e in events for d in (e["registration"], e["date"], e["payment"], e["reinvest_date"]) if d and req.start_date.isoformat() <= d <= end_day}
                   | set(splits_by_day))
     all_days = sorted(({d for d in nav_days if req.start_date.isoformat() <= d <= end_day}) | set(schedule) | event_days)
+    registration_events: dict[str, list[int]] = {}
+    ex_date_events: dict[str, list[int]] = {}
+    for index, event in enumerate(events):
+        if event["registration"]:
+            registration_events.setdefault(event["registration"], []).append(index)
+        ex_date_events.setdefault(event["date"], []).append(index)
 
     units = Decimal("0")
     cash = Decimal("0")
     invested = Decimal("0")
     fees = Decimal("0")
     dividends = Decimal("0")
-    pending: list[dict[str, Any]] = []
+    pending: dict[int, Decimal] = {}
+    pending_total = Decimal("0")
     entitlement: dict[int, Decimal] = {}
-    reinvest_queue: dict[str, list[Decimal]] = {}
-    cash_queue: dict[str, list[Decimal]] = {}
+    reinvest_queue: dict[str, list[tuple[int, Decimal]]] = {}
+    action_queue: dict[str, list[int]] = {}
     curve = []
     ledger = []
     flows: list[tuple[str, float]] = []
@@ -818,39 +825,44 @@ def calculate_long_dca(req: LongDcaRequest, history: dict[str, Any]) -> dict[str
             units *= factor
             ledger.append({"date": day, "code": "050025", "type": "份额拆分", "units": float(units - before), "note": f"按披露拆分比例 ×{factor}"})
         # Registration-day holdings determine each fund dividend entitlement.
-        for i, event in enumerate(events):
-            if event["registration"] == day:
-                entitlement[i] = units
+        for index in registration_events.get(day, []):
+            entitlement[index] = units
         # A dividend becomes an asset on ex-date; it is reinvested or paid on its disclosed date.
-        for i, event in enumerate(events):
-            if event["date"] == day:
-                amount = entitlement.get(i, units) * event["cash_per_unit"]
-                if amount > 0:
-                    action_date = (event["reinvest_date"] if req.reinvest_dividends else event["payment"]) or event["payment"] or day
-                    pending.append({"amount": amount, "action_date": action_date, "reinvest": req.reinvest_dividends})
-                    dividends += amount
-                    ledger.append({"date": day, "code": "050025", "type": "分红确认", "amount": round(float(amount), 2), "note": "金额按登记日持有份额及每份税后分红计算"})
-        for item in list(pending):
-            if item["action_date"] == day:
-                target = next_nav_day(day) if item["reinvest"] else day
-                if target is None:
-                    continue
-                queue = reinvest_queue if item["reinvest"] else cash_queue
-                queue.setdefault(target, []).append(item["amount"])
-                pending.remove(item)
-        if day in cash_queue:
-            paid = sum(cash_queue.pop(day), Decimal("0"))
-            cash += paid
-            ledger.append({"date": day, "code": "050025", "type": "现金分红到账", "amount": round(float(paid), 2), "note": "按披露支付日入账"})
+        for index in ex_date_events.get(day, []):
+            event = events[index]
+            amount = entitlement.get(index, units) * event["cash_per_unit"]
+            if amount <= 0:
+                continue
+            action_date = (event["reinvest_date"] if req.reinvest_dividends else event["payment"]) or event["payment"] or day
+            pending[index] = amount
+            pending_total += amount
+            action_queue.setdefault(action_date, []).append(index)
+            dividends += amount
+            ledger.append({"date": day, "code": "050025", "type": "分红确认", "amount": round(float(amount), 2), "note": "金额按登记日持有份额及每份税后分红计算"})
+        for index in action_queue.pop(day, []):
+            amount = pending.get(index)
+            if amount is None:
+                continue
+            if req.reinvest_dividends:
+                target = next_nav_day(day)
+                if target is not None:
+                    reinvest_queue.setdefault(target, []).append((index, amount))
+            else:
+                cash += amount
+                pending_total -= amount
+                pending.pop(index, None)
+                ledger.append({"date": day, "code": "050025", "type": "现金分红到账", "amount": round(float(amount), 2), "note": "按披露支付日入账"})
         if day not in nav_by_day:
             continue
         nav = nav_by_day[day]
         if day in reinvest_queue:
-            for amount in reinvest_queue.pop(day):
+            for index, amount in reinvest_queue.pop(day):
                 bought = (amount / nav).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
                 cost = bought * nav
                 units += bought
                 cash += amount - cost
+                pending_total -= amount
+                pending.pop(index, None)
                 ledger.append({"date": day, "code": "050025", "type": "分红再投资", "price": float(nav), "units": float(bought), "amount": round(float(cost), 2), "fee": 0, "note": "按披露再投资日净值；未扣普通申购费"})
         for planned_day in schedule.get(day, []):
             gross = req.monthly_amount
@@ -866,7 +878,7 @@ def calculate_long_dca(req: LongDcaRequest, history: dict[str, Any]) -> dict[str
             executed += 1
             ledger.append({"date": day, "planned_date": planned_day, "code": "050025", "type": "定投申购", "price": float(nav), "units": float(bought), "amount": round(float(gross), 2), "fee": round(float(fee), 2), "note": "场外基金按当日单位净值；份额保留两位小数"})
 
-        receivable = sum((item["amount"] for item in pending), Decimal("0"))
+        receivable = pending_total
         value = cash + receivable + units * nav
         curve.append({"date": day, "value": round(float(value), 2), "invested": round(float(invested), 2), "cash": round(float(cash), 2)})
 
@@ -899,7 +911,7 @@ def calculate_long_dca(req: LongDcaRequest, history: dict[str, Any]) -> dict[str
         "schedule_weekday": req.schedule_weekday if req.frequency in {"weekly", "biweekly"} else None,
         "units": round(float(units), 2),
         "latest_nav": float(nav_by_day[actual_end]),
-        "pending_dividends": round(float(sum((item["amount"] for item in pending), Decimal("0"))), 2),
+        "pending_dividends": round(float(pending_total), 2),
     }
     warnings = [
         "假设计划日期均可申购；未还原历史限购、暂停申购及平台额度。",

@@ -79,6 +79,66 @@ def test_dividend_entitlement_and_reinvestment_use_disclosed_dates():
     assert any(x["type"] == "分红再投资" and x["date"] == "2024-01-06" for x in result["ledger"])
 
 
+def test_reinvestment_dividend_stays_in_nav_value_until_next_nav_day():
+    history = fund_history(
+        [
+            {"date": "2024-01-02", "open": 1, "close": 1},
+            {"date": "2024-01-08", "open": 1, "close": 1},
+        ],
+        [{"registration": "2024-01-03", "date": "2024-01-04", "payment": "2024-01-08", "reinvest_date": "2024-01-06", "cash": 0.1}],
+    )
+    result = calculate_long_dca(request(
+        stop_date=date(2024, 1, 2),
+        evaluation_date=date(2024, 1, 8),
+        monthly_amount=1000,
+    ), history)
+
+    assert result["summary"]["value"] == pytest.approx(1100)
+    assert result["summary"]["units"] == pytest.approx(1100)
+    assert result["summary"]["pending_dividends"] == pytest.approx(0)
+    assert any(row["type"] == "分红再投资" and row["date"] == "2024-01-08" for row in result["ledger"])
+
+
+def test_unsettled_reinvested_dividend_remains_in_ending_value():
+    history = fund_history(
+        [
+            {"date": "2024-01-02", "open": 1, "close": 1},
+            {"date": "2024-01-08", "open": 1, "close": 1},
+        ],
+        [{"registration": "2024-01-03", "date": "2024-01-04", "payment": "2024-01-10", "reinvest_date": "2024-01-10", "cash": 0.1}],
+    )
+    result = calculate_long_dca(request(
+        stop_date=date(2024, 1, 2),
+        evaluation_date=date(2024, 1, 8),
+        monthly_amount=1000,
+    ), history)
+
+    assert result["summary"]["value"] == pytest.approx(1100)
+    assert result["summary"]["units"] == pytest.approx(1000)
+    assert result["summary"]["pending_dividends"] == pytest.approx(100)
+
+
+def test_cash_dividend_moves_from_receivable_to_cash_on_payment_date():
+    history = fund_history(
+        [
+            {"date": "2024-01-02", "open": 1, "close": 1},
+            {"date": "2024-01-08", "open": 1, "close": 1},
+        ],
+        [{"registration": "2024-01-03", "date": "2024-01-04", "payment": "2024-01-06", "reinvest_date": "2024-01-06", "cash": 0.1}],
+    )
+    result = calculate_long_dca(request(
+        stop_date=date(2024, 1, 2),
+        evaluation_date=date(2024, 1, 8),
+        monthly_amount=1000,
+        reinvest_dividends=False,
+    ), history)
+
+    assert result["summary"]["value"] == pytest.approx(1100)
+    assert result["summary"]["units"] == pytest.approx(1000)
+    assert result["summary"]["cash"] == pytest.approx(100)
+    assert result["summary"]["pending_dividends"] == pytest.approx(0)
+
+
 def test_fund_share_split_changes_units_without_changing_value():
     history = fund_history([
         {"date": "2024-01-02", "open": 1, "close": 1},
