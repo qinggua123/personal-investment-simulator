@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>政策事件研究 · 个人投资模拟器</title>
+<style>
+:root{--bg:#f3f7f5;--ink:#173b3c;--muted:#647c7a;--teal:#087b70;--line:#dce7e3;--amber:#b17922;--red:#a7473e;--white:#fff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,"Microsoft YaHei",sans-serif}header,main{max-width:1320px;margin:auto;padding:18px 22px}header{display:flex;justify-content:space-between;align-items:center;gap:20px;border-bottom:1px solid var(--line)}h1{font-size:26px;margin:0}h2{font-size:18px;margin:0 0 10px}h3{font-size:15px;margin:14px 0 6px}p{color:var(--muted);margin:6px 0 14px}nav{display:flex;gap:16px;flex-wrap:wrap}a{color:var(--teal)}.card{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:18px;margin:16px 0;box-shadow:0 5px 20px #19463b0a}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.field{display:flex;flex-direction:column;gap:5px}.field span{font-size:12px;font-weight:650;color:var(--muted)}input,select,textarea{width:100%;font:inherit;padding:9px 10px;border:1px solid #cadbd5;border-radius:8px;background:#fff;color:var(--ink)}textarea{min-height:88px;resize:vertical}.check{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}.check input{width:auto;accent-color:var(--teal)}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px}button{background:var(--teal);border:0;border-radius:8px;color:white;padding:10px 16px;font:inherit;font-weight:650;cursor:pointer}button:disabled{opacity:.55;cursor:wait}.secondary{background:#e7f1ed;color:var(--teal)}.danger{background:#fff0ed;color:var(--red);padding:5px 9px}.message{padding:11px 13px;border-radius:7px;background:#eef5f2;color:#375d59}.warn{background:#fff5df;color:#79551d}.err{background:#fff0ed;color:#8b3c34}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#f3f8f5;border-radius:10px;padding:12px}.metric small{display:block;color:var(--muted)}.metric strong{font-size:20px}.tablewrap{overflow:auto;border:1px solid var(--line);border-radius:10px}table{width:100%;min-width:900px;border-collapse:collapse;font-size:13px}th,td{padding:9px 10px;border-bottom:1px solid #e8efec;text-align:left;vertical-align:top}th{background:#f5f8f6;color:#526d69;position:sticky;top:0}tr:last-child td{border-bottom:0}.tag{display:inline-block;background:#e7f2ee;color:#2a645a;border-radius:999px;padding:3px 8px;font-size:11px}.tag.warn{background:#fff1d4;color:#805b20}.tag.muted{background:#edf0ef;color:#64716e}.muted{color:var(--muted)}.small{font-size:12px}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.hidden{display:none!important}.empty{color:var(--muted);padding:14px}.progress{height:8px;background:#e6eeea;border-radius:99px;overflow:hidden}.progress i{display:block;height:100%;background:var(--teal);width:0%;transition:width .3s}.wide{grid-column:1/-1}.num{font-variant-numeric:tabular-nums}.nowrap{white-space:nowrap}@media(max-width:700px){header{display:block}nav{margin-top:8px}header,main{padding:14px}.card{padding:14px}}
+</style>
+</head>
+<body>
+<header><div><h1>政策事件研究</h1><p>核验政策与公司关联，查看事件窗口表现和时点暴露</p></div><nav><a href="/">定投回测</a><a href="/trade">模拟交易</a><a href="/research">股票因子研究</a><a href="/settings">固定配置</a></nav></header>
+<main>
+  <section class="card">
+    <h2>研究状态</h2>
+    <p>项目种子含 9 条政策事件和 65 家研究公司。原项目没有已复核的公司关联，因此政策效应与预测模型默认阻断。请先为有业务证据的公司建立关联。</p>
+    <div class="metrics" id="summary"></div>
+    <div class="message warn small" style="margin-top:12px">事件研究显示历史相关性，不证明政策造成股价变化，也不会生成买卖信号或模拟订单。政策源文件只提供官方网页链接，尚未复制到本项目。</div>
+  </section>
+
+  <section class="card">
+    <h2>政策事件目录</h2>
+    <div class="tablewrap"><table><thead><tr><th>事件</th><th>发布日期</th><th>方向</th><th>适用范围</th><th>来源与复核状态</th><th>公司关联</th></tr></thead><tbody id="events"></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>添加或更新公司关联</h2>
+    <p>证据必须说明事件发生前该公司如何受影响。若证据在政策首次公开后才出现，请保留为未复核，不能用于历史事件研究。</p>
+    <form id="linkForm">
+      <div class="grid">
+        <label class="field"><span>政策事件</span><select id="eventId" required></select></label>
+        <label class="field"><span>公司</span><select id="code" required></select></label>
+        <label class="field"><span>关联强度</span><select id="strength"><option value="1">直接（1.0）</option><option value="0.5">间接（0.5）</option></select></label>
+        <label class="field"><span>影响渠道</span><select id="channel"><option value="收入">收入</option><option value="成本">成本</option><option value="供应链">供应链</option><option value="补贴或税收">补贴或税收</option><option value="市场准入">市场准入</option><option value="资本开支">资本开支</option><option value="其他">其他</option></select></label>
+        <label class="field"><span>证据可用日期</span><input id="evidenceDate" type="date" required></label>
+        <label class="field"><span>证据链接（复核必填）</span><input id="evidenceUrl" type="url" placeholder="https://..."></label>
+        <label class="field wide"><span>公司业务证据</span><textarea id="evidence" minlength="8" maxlength="2000" placeholder="引用公司当时的产品、客户、产能或政策适用条款，并说明证据出处。" required></textarea></label>
+        <label class="check wide"><input id="reviewed" type="checkbox">我已核对证据来源链接，且证据可用日期不晚于政策首次公开时间</label>
+      </div>
+      <div class="actions"><button id="saveLink" type="submit">保存公司关联</button><span id="linkStatus" class="small muted"></span></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="toolbar"><div><h2>公司关联记录</h2><p>只有已复核且证据时间不晚于事件发布的关联，才能进入事件研究。</p></div></div>
+    <div class="tablewrap"><table><thead><tr><th>事件</th><th>公司</th><th>强度 / 渠道</th><th>业务证据</th><th>证据日期</th><th>状态</th><th>操作</th></tr></thead><tbody id="links"></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>运行事件研究</h2>
+    <p>对复核通过的关联，使用 CSI 300 交易日历映射事件日，以事件前 250 至 31 个交易日拟合市场模型，并计算五个预设窗口的异常收益和 CAR。缺少行情的年份会从同花顺接口获取。</p>
+    <div class="grid">
+      <label class="field"><span>研究截止日</span><input id="evaluationDate" type="date"></label>
+      <label class="check"><input id="refreshData" type="checkbox">强制刷新相关行情</label>
+    </div>
+    <div class="actions"><button id="runStudy">运行事件研究</button><span id="studyStatus" class="small muted"></span></div>
+    <div class="progress" style="margin-top:12px"><i id="progress"></i></div>
+    <p id="progressText" class="small muted"></p>
+  </section>
+
+  <section class="card hidden" id="resultCard">
+    <div class="toolbar"><div><h2>研究结果</h2><p id="resultMeta"></p></div></div>
+    <div class="metrics" id="resultSummary"></div>
+    <div id="modelNotice" class="message warn small" style="margin:12px 0"></div>
+    <h3>事件窗口结果</h3>
+    <div class="tablewrap"><table><thead><tr><th>事件 / 公司</th><th>交易日</th><th>窗口</th><th>CAR</th><th>实际收益</th><th>95% 区间</th><th>p / BH q</th><th>估计样本</th><th>状态 / 原因</th></tr></thead><tbody id="studyRows"></tbody></table></div>
+    <h3>公司当前政策暴露</h3>
+    <p>分数是支持或限制方向、关联强度和 20 个交易日半衰期的组合，不是预期收益率。</p>
+    <div class="tablewrap"><table><thead><tr><th>公司</th><th>行业</th><th>暴露分数</th><th>状态</th><th>有效事件</th><th>说明</th></tr></thead><tbody id="exposureRows"></tbody></table></div>
+    <h3>行情覆盖</h3><div class="tablewrap"><table><thead><tr><th>公司</th><th>起止日期</th><th>行情条数</th><th>状态</th><th>请求编号</th></tr></thead><tbody id="coverageRows"></tbody></table></div>
+    <h3>限制</h3><ul id="limitations"></ul>
+    <details><summary>未纳入计算的关联</summary><div id="exclusions"></div></details>
+    <details><summary>事件家族汇总</summary><pre id="familySummary"></pre></details>
+  </section>
+
+  <section class="card">
+    <h2>研究运行历史</h2><div id="history" class="empty">尚无政策研究运行</div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id), esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pct=value=>value==null?'—':`${(Number(value)*100).toFixed(2)}%`, num=(value,d=3)=>value==null?'—':Number(value).toFixed(d);
+let overview=null;
+async function api(path,options={}){const response=await fetch(path,options);let body={};try{body=await response.json()}catch{}if(!response.ok){const detail=body.detail;throw new Error(Array.isArray(detail)?detail.map(x=>x.msg).join('；'):detail||response.statusText)}return body}
+function localDate(){const now=new Date();return new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10)}
+function renderSummary(data){const s=data.summary;$('summary').innerHTML=[['政策事件',s.event_count],['研究公司',s.company_count],['公司关联',s.link_count],['已复核关联',s.reviewed_link_count],['本项目已存原文',s.source_documents_archived],['最近事件日期',s.latest_event]].map(([label,value])=>`<div class="metric"><small>${esc(label)}</small><strong>${esc(value??'—')}</strong></div>`).join('')}
+function renderEvents(data){const eventMap=new Map(data.events.map(event=>[event.event_id,event]));$('eventId').innerHTML=data.events.map(e=>`<option value="${esc(e.event_id)}">${esc(e.event_id)} · ${esc(e.scope)}</option>`).join('');$('events').innerHTML=data.events.map(e=>{const href=e.source_url||e.regulation_url;const state=e.reviewed?'已复核':'未复核';return `<tr><td><strong>${esc(e.event_id)}</strong><br><span class="small muted">${esc(e.type)}</span></td><td>${esc(e.published_at)}${e.date_only?'（日期精度）':''}</td><td>${esc(e.direction)}</td><td>${esc(e.scope)}</td><td>${href?`<a href="${esc(href)}" target="_blank" rel="noopener">官方来源</a>`:'无来源链接'}<br><span class="tag ${e.reviewed?'':'warn'}">${state}</span></td><td>${e.reviewed_link_count}/${e.link_count} 已复核</td></tr>`}).join('');return eventMap}
+function renderCompanies(data){$('code').innerHTML=data.companies.map(c=>`<option value="${esc(c.code)}">${esc(c.code)} ${esc(c.name)} · ${esc(c.sector)} · ${esc(c.role)}</option>`).join('')}
+function renderLinks(data,eventMap){$('links').innerHTML=data.links.map(link=>{const event=eventMap.get(link.event_id)||{};const company=data.companies.find(c=>c.code===link.code)||{};return `<tr><td>${esc(link.event_id)}<br><span class="small muted">${esc(event.published_at)}</span></td><td>${esc(link.code)} ${esc(company.name)}</td><td>${num(link.strength,1)} / ${esc(link.channel)}</td><td>${esc(link.business_evidence)}${link.evidence_url?`<br><a href="${esc(link.evidence_url)}" target="_blank" rel="noopener">证据来源</a>`:''}</td><td>${esc(link.evidence_available_at)}</td><td><span class="tag ${link.reviewed?'':'warn'}">${link.reviewed?'已复核':'待复核'}</span></td><td><button class="danger" data-delete="${esc(link.event_id)}|${esc(link.code)}">删除</button></td></tr>`}).join('')||'<tr><td colspan="7" class="empty">还没有公司关联。当前政策模型会保持阻断。</td></tr>';document.querySelectorAll('[data-delete]').forEach(button=>button.onclick=async()=>{const [eventId,code]=button.dataset.delete.split('|');try{await api(`/api/policy/links/${encodeURIComponent(eventId)}/${encodeURIComponent(code)}`,{method:'DELETE'});await loadOverview()}catch(error){$('linkStatus').textContent=error.message}})}
+function renderHistory(items){$('history').innerHTML=items.map(item=>`<button class="secondary" data-study="${esc(item.id)}">${esc(item.created_at)} · ${esc(item.status)} · ${esc(item.message)}</button>`).join('')||'<div class="empty">尚无政策研究运行</div>';document.querySelectorAll('[data-study]').forEach(button=>button.onclick=()=>loadStudy(button.dataset.study))}
+async function loadOverview(){overview=await api('/api/policy/overview');renderSummary(overview);const eventMap=renderEvents(overview);renderCompanies(overview);renderLinks(overview,eventMap);renderHistory(overview.studies);if(!$('evaluationDate').value)$('evaluationDate').value=localDate();const latest=overview.studies.find(item=>item.status==='done'||item.status.startsWith('blocked_'));if(latest)await loadStudy(latest.id)}
+function renderStudy(record){const r=record.result;if(!r)return;$('resultCard').classList.remove('hidden');$('resultMeta').textContent=`运行 ${record.id} · 截止 ${r.evaluation_date} · 方法 ${r.method_version} · 输入 SHA256 ${r.input_hash}`;$('studyStatus').textContent=`${record.status} · ${record.message}`;$('resultSummary').innerHTML=[['已复核关联',r.reviewed_link_count],['合格关联',r.eligible_link_count],['有效事件窗口',r.successful_study_count??0],['基准覆盖',r.benchmark?`${r.benchmark.first_date} 至 ${r.benchmark.last_date}`:'缺失']].map(([l,v])=>`<div class="metric"><small>${esc(l)}</small><strong>${esc(v??'—')}</strong></div>`).join('');$('modelNotice').textContent=`政策预测层：${r.predictive_layer?.status||'blocked'}。${r.predictive_layer?.reason||'本结果仅供事件研究。'}`;const eventMap=new Map(overview.events.map(e=>[e.event_id,e]));const companyMap=new Map(overview.companies.map(c=>[c.code,c]));$('studyRows').innerHTML=(r.study_results||[]).map(row=>{const event=eventMap.get(row.event_id)||{};const company=companyMap.get(row.code)||{};const status=row.status==='exploratory'?'探索性结果':'跳过';return `<tr><td>${esc(row.event_id)}<br>${esc(row.code)} ${esc(company.name)}</td><td>${esc(row.event_session||'—')}</td><td>${esc(row.window)}</td><td>${pct(row.car)}</td><td>${pct(row.actual_return)}</td><td>${row.ci_low==null?'—':`${pct(row.ci_low)} 至 ${pct(row.ci_high)}`}</td><td>${row.p_value==null?'—':`${num(row.p_value,4)} / ${num(row.q_bh,4)}`}</td><td>${esc(row.n_estimation??'—')}</td><td><span class="tag ${row.status==='exploratory'?'':'warn'}">${status}</span><br>${esc(row.reason)}</td></tr>`}).join('')||'<tr><td colspan="9" class="empty">没有有效事件窗口。查看下方排除原因。</td></tr>';$('exposureRows').innerHTML=(r.exposures||[]).filter(x=>x.status==='available').sort((a,b)=>Number(b.score)-Number(a.score)).map(x=>`<tr><td>${esc(x.code)} ${esc(x.name)}</td><td>${esc(x.sector)}</td><td class="num">${num(x.score,4)}</td><td>已知暴露</td><td>${esc((x.event_ids||[]).join(', ')||'—')}</td><td>${esc(x.reason||'分数不是预期收益率')}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">没有已知的有效政策暴露。未见关联不等于暴露为零。</td></tr>';$('coverageRows').innerHTML=(r.coverage||[]).map(x=>`<tr><td>${esc(x.code)} ${esc(x.name)}</td><td>${esc(x.first_date||'—')} 至 ${esc(x.last_date||'—')}</td><td>${esc(x.rows)}</td><td>${esc(x.status)} ${esc(x.error||'')}</td><td class="small">${(x.request_ids||[]).map(esc).join('<br>')||'—'}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">没有行情请求</td></tr>';$('limitations').innerHTML=(r.limitations||[]).map(x=>`<li>${esc(x)}</li>`).join('');$('exclusions').innerHTML=(r.exclusions||[]).map(x=>`<p class="small">${esc(x.event_id)} ${esc(x.code)}：${esc(x.reason)}</p>`).join('')||'<p class="small muted">无排除项。</p>';$('familySummary').textContent=JSON.stringify(r.family_summary||[],null,2)}
+async function loadStudy(id){try{const record=await api(`/api/policy/studies/${id}`);$('progress').style.width=`${record.progress||0}%`;$('progressText').textContent=record.message||record.status;if(record.result)renderStudy(record);else $('studyStatus').textContent=`${record.status} · ${record.message}`}catch(error){$('studyStatus').textContent=error.message}}
+async function pollStudy(id){for(let n=0;n<1800;n++){const record=await api(`/api/policy/studies/${id}`);$('progress').style.width=`${record.progress||0}%`;$('progressText').textContent=record.message||record.status;$('studyStatus').textContent=`${record.status} · ${record.message}`;if(record.result){renderStudy(record);await loadOverview();return}if(record.status==='failed')throw new Error(record.error||'政策研究失败');await new Promise(resolve=>setTimeout(resolve,1500))}throw new Error('研究仍在后台运行，可从运行历史打开。')}
+$('linkForm').onsubmit=async event=>{event.preventDefault();const button=$('saveLink');button.disabled=true;$('linkStatus').textContent='保存中';try{const eventId=$('eventId').value,code=$('code').value;const body={strength:Number($('strength').value),channel:$('channel').value,business_evidence:$('evidence').value,evidence_url:$('evidenceUrl').value,evidence_available_at:$('evidenceDate').value,reviewed:$('reviewed').checked};await api(`/api/policy/links/${encodeURIComponent(eventId)}/${encodeURIComponent(code)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});$('linkStatus').textContent='已保存';await loadOverview()}catch(error){$('linkStatus').textContent=error.message}finally{button.disabled=false}};
+$('runStudy').onclick=async()=>{const button=$('runStudy');button.disabled=true;$('progress').style.width='0%';$('progressText').textContent='创建研究';$('resultCard').classList.add('hidden');try{const result=await api('/api/policy/studies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_ids:[],codes:[],evaluation_date:$('evaluationDate').value,refresh_data:$('refreshData').checked})});await pollStudy(result.id)}catch(error){$('studyStatus').textContent=error.message;$('progressText').textContent=error.message}finally{button.disabled=false}};
+loadOverview().catch(error=>{$('summary').innerHTML=`<div class="message err">${esc(error.message)}</div>`});
+</script>
+</body>
+</html>

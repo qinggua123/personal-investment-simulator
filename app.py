@@ -9,7 +9,7 @@ import sqlite3
 import subprocess
 import uuid
 from contextlib import closing, contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
@@ -18,14 +18,16 @@ from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 try:
     from .backtest import BacktestRequest, LongDcaRequest
     from . import stock_research as sr
+    from . import policy_research as pr
 except ImportError:
     from backtest import BacktestRequest, LongDcaRequest
     import stock_research as sr
+    import policy_research as pr
 
 
 HERE = Path(__file__).resolve().parent
@@ -55,6 +57,10 @@ MONTHLY_BUDGET = {"sp500": 540, "topix": 360, "stock_reserve": 150, "bond": 1350
 
 def now_iso() -> str:
     return datetime.now(CN_TZ).isoformat(timespec="seconds")
+
+
+def today_cn() -> date:
+    return datetime.now(CN_TZ).date()
 
 
 def as_decimal(value: Any, field: str) -> Decimal:
@@ -233,6 +239,28 @@ class SettingsIn(BaseModel):
     quota_017641: Decimal | None = Field(default=None, ge=0, le=1000000)
     fee_017641: Decimal | None = Field(default=None, ge=0, le=0.1)
     fee_012692: Decimal | None = Field(default=None, ge=0, le=0.1)
+
+
+class PolicyLinkIn(BaseModel):
+    strength: float = Field(ge=0.5, le=1)
+    channel: str = Field(min_length=1, max_length=80)
+    business_evidence: str = Field(min_length=8, max_length=2000)
+    evidence_url: str = Field(default="", max_length=2000)
+    evidence_available_at: str = Field(min_length=10, max_length=40)
+    reviewed: bool = False
+
+
+class PolicyStudyIn(BaseModel):
+    event_ids: list[str] = Field(default_factory=list)
+    codes: list[str] = Field(default_factory=list)
+    evaluation_date: date = Field(default_factory=today_cn)
+    refresh_data: bool = False
+
+    @model_validator(mode="after")
+    def valid_evaluation_date(self):
+        if self.evaluation_date > today_cn():
+            raise ValueError("研究截止日不能晚于今天")
+        return self
 
 
 class PreviewIn(BaseModel):
@@ -543,8 +571,11 @@ def create_app(db_path: Path = DB_PATH, seed: bool = True) -> FastAPI:
     run_db = db_path.parent / "backtests.sqlite3"
     bt.init_runs(run_db)
     sr.initialize(sr.RUN_DB)
+    policy_db_path = db_path.parent / "research" / "policy.sqlite3"
+    pr.initialize(policy_db_path)
     app = FastAPI(title="个人投资模拟器", version="1.0.0")
     app.state.db_path = db_path
+    app.state.policy_db_path = policy_db_path
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
     @app.get("/favicon.ico", include_in_schema=False)
@@ -567,9 +598,50 @@ def create_app(db_path: Path = DB_PATH, seed: bool = True) -> FastAPI:
     def stock_research_page() -> FileResponse:
         return FileResponse(HERE / "static" / "research.html")
 
+    @app.get("/policy")
+    def policy_research_page() -> FileResponse:
+        return FileResponse(HERE / "static" / "policy.html")
+
     @app.get("/api/research/universe")
     def research_universe() -> dict[str, Any]:
         return {"items": sr.UNIVERSE, "count": len(sr.UNIVERSE), "model_version": sr.MODEL_VERSION}
+
+    @app.get("/api/policy/overview")
+    def policy_overview() -> dict[str, Any]:
+        return pr.get_overview(app.state.policy_db_path)
+
+    @app.put("/api/policy/links/{event_id}/{code}")
+    def save_policy_link(event_id: str, code: str, payload: PolicyLinkIn) -> dict[str, Any]:
+        try:
+            data = payload.model_dump()
+            data.update({"event_id": event_id, "code": code})
+            return {"item": pr.upsert_link(data, app.state.policy_db_path)}
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.delete("/api/policy/links/{event_id}/{code}")
+    def remove_policy_link(event_id: str, code: str) -> dict[str, bool]:
+        if not pr.delete_link(event_id, code, app.state.policy_db_path):
+            raise HTTPException(404, "公司政策关联不存在")
+        return {"deleted": True}
+
+    @app.post("/api/policy/studies")
+    def start_policy_study(payload: PolicyStudyIn, background: BackgroundTasks) -> dict[str, str]:
+        data = payload.model_dump(mode="json")
+        study_id = pr.create_study(data, app.state.policy_db_path)
+        background.add_task(pr.execute_study, study_id, app.state.policy_db_path)
+        return {"id": study_id, "status": "queued"}
+
+    @app.get("/api/policy/studies")
+    def policy_studies() -> dict[str, Any]:
+        return {"items": pr.list_studies(app.state.policy_db_path)}
+
+    @app.get("/api/policy/studies/{study_id}")
+    def policy_study(study_id: str) -> dict[str, Any]:
+        try:
+            return pr.get_study(study_id, app.state.policy_db_path)
+        except KeyError as exc:
+            raise HTTPException(404, "政策研究记录不存在") from exc
 
     @app.post("/api/research/runs")
     def start_stock_research(request: sr.ResearchRunRequest, background: BackgroundTasks) -> dict[str, str]:

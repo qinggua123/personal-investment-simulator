@@ -33,6 +33,7 @@ RUN_DB = RUNTIME / "research.sqlite3"
 EXPORT_DIR = RUNTIME / "exports"
 CN_TZ = ZoneInfo("Asia/Shanghai")
 DB_LOCK = threading.RLock()
+CACHE_LOCK = threading.RLock()
 MODEL_VERSION = "factor-duPont-v1.1"
 CSI300_CODE = "000300.SH"
 
@@ -203,20 +204,21 @@ def _raw_path(name: str) -> Path:
 
 
 def _fetch_cached(name: str, fetch, refresh: bool, *, refresh_daily: bool = False) -> dict[str, Any]:
-    path = _raw_path(name)
-    fresh_today = path.exists() and datetime.fromtimestamp(path.stat().st_mtime, CN_TZ).date() == today_cn()
-    if path.exists() and not refresh and (not refresh_daily or fresh_today):
-        return json.loads(path.read_text(encoding="utf-8"))
-    try:
-        from . import backtest as bt
-    except ImportError:
-        import backtest as bt
-    # The existing Hithink adapter serializes CLI access and checks API errors.
-    payload = fetch(bt)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(_dump(payload), encoding="utf-8")
-    tmp.replace(path)
-    return payload
+    with CACHE_LOCK:
+        path = _raw_path(name)
+        fresh_today = path.exists() and datetime.fromtimestamp(path.stat().st_mtime, CN_TZ).date() == today_cn()
+        if path.exists() and not refresh and (not refresh_daily or fresh_today):
+            return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            from . import backtest as bt
+        except ImportError:
+            import backtest as bt
+        # The existing Hithink adapter serializes CLI access and checks API errors.
+        payload = fetch(bt)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(_dump(payload), encoding="utf-8")
+        tmp.replace(path)
+        return payload
 
 
 def _hithink(bt, *args: str) -> dict[str, Any]:
@@ -284,6 +286,86 @@ def _pull_index(start: date, end: date, refresh: bool) -> dict[str, Any]:
         request_ids.append(str(payload.get("meta", {}).get("request_id", "")))
     return {"prices": rows, "request_ids": [x for x in request_ids if x], "thscode": CSI300_CODE,
             "basis": "CSI 300 price index; dividend return is excluded by source"}
+
+
+def load_or_fetch_daily_bars(thscode: str, start: date, end: date, *,
+                             instrument_type: Literal["stock", "index"] = "stock",
+                             refresh: bool = False) -> dict[str, Any]:
+    """Return normalized daily bars from the shared cache, fetching missing years.
+
+    Policy research uses this public boundary instead of reading raw cache files
+    or calling private Hithink adapters. Index rows and stock rows both expose
+    ``date``, ``open`` and ``close`` in Shanghai calendar dates.
+    """
+    match = re.fullmatch(r"(\d{6})\.(SH|SZ|BJ)", str(thscode).strip().upper())
+    if not match:
+        raise ValueError("证券代码必须采用六位数字加 .SH、.SZ 或 .BJ")
+    if instrument_type not in {"stock", "index"}:
+        raise ValueError("instrument_type 必须是 stock 或 index")
+    if start > end:
+        raise ValueError("start 不得晚于 end")
+
+    code = match.group(1)
+    all_rows: dict[str, dict[str, Any]] = {}
+    request_ids: list[str] = []
+    for year in range(start.year, end.year + 1):
+        year_start, year_end = date(year, 1, 1), date(year, 12, 31)
+        first, last = max(start, year_start), min(end, year_end)
+        if instrument_type == "index" and code == "000300":
+            cache_name = f"csi300_prices_{year}.json"
+        else:
+            suffix = "" if instrument_type == "stock" else "_index"
+            cache_name = f"{code}{suffix}_prices_{year}.json"
+
+        fetch_end = min(year_end, today_cn())
+        def fetch(bt, first=year_start, last=fetch_end):
+            if instrument_type == "index":
+                return _hithink(bt, "index", "history", "--thscode", thscode,
+                                "--start-ms", str(_ms(first)), "--end-ms", str(_ms(last)))
+            return _hithink(bt, "market", "history", "--thscode", thscode,
+                            "--start-ms", str(_ms(first)), "--end-ms", str(_ms(last)),
+                            "--adjust", "none")
+
+        cache_refresh = refresh
+        cache_path = _raw_path(cache_name)
+        if cache_path.exists() and not refresh:
+            try:
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                cached_days = sorted(day for item in cached.get("data", {}).get("item", [])
+                                     if (day := _date(item.get("date_ms"))) is not None)
+                latest_expected = min(last, today_cn() - timedelta(days=7))
+                earliest_expected = first + timedelta(days=7)
+                if (not cached_days or cached_days[0] > earliest_expected.isoformat()
+                        or cached_days[-1] < latest_expected.isoformat()):
+                    cache_refresh = True
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                cache_refresh = True
+        payload = _fetch_cached(cache_name, fetch, cache_refresh,
+                                refresh_daily=year == today_cn().year)
+        request_id = str(payload.get("meta", {}).get("request_id", ""))
+        if request_id:
+            request_ids.append(request_id)
+        for item in payload.get("data", {}).get("item", []):
+            try:
+                day = _date(item.get("date_ms"))
+                open_price = float(item.get("open_price"))
+                close_price = float(item.get("close_price"))
+                if not day or not (first.isoformat() <= day <= last.isoformat()):
+                    continue
+                if day >= today_cn().isoformat() or open_price <= 0 or close_price <= 0:
+                    continue
+                row = {"date": day, "open": open_price, "close": close_price}
+                previous = all_rows.get(day)
+                if previous and (abs(previous["open"] - open_price) > 1e-8 or
+                                 abs(previous["close"] - close_price) > 1e-8):
+                    raise RuntimeError(f"{thscode} {day} 有冲突的重复行情")
+                all_rows[day] = row
+            except (TypeError, ValueError):
+                continue
+    return {"thscode": thscode, "instrument_type": instrument_type,
+            "prices": [all_rows[day] for day in sorted(all_rows)],
+            "request_ids": request_ids, "fetched_at": datetime.now(CN_TZ).isoformat(timespec="seconds"),
+            "source": "hithink-finance", "basis": "daily close price return"}
 
 
 def _pull_current_valuations(refresh: bool) -> dict[str, Any]:
